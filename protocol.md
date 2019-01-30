@@ -20,7 +20,10 @@ All keys must be byte strings and must appear in lexicographical order. A dictio
 the keys "foo" and "bar", respectively (in other words, {"bar": "spam", "foo": 42}), would be encoded as follows: d3:bar4:spam3:fooi42ee.  
 
 
-## Peer to peer
+
+
+The foolowing protocol is inspired by bitTorrent protocole with some modifications (source: https://wiki.theory.org/index.php/BitTorrentSpecification#Tracker_HTTP.2FHTTPS_Protocol)
+## Player-player communication
 #### Message definition
 
 - **keep alive**:         `<len=0x0000`>  
@@ -28,56 +31,62 @@ the keys "foo" and "bar", respectively (in other words, {"bar": "spam", "foo": 4
 - **unchoke**:            `<len=0x0001`><`id=0x01`>    
 - **interested**:         `<len=0x0001`><`id=0x02`>
 - **not interested**:     `<len=0x0001`><`id=0x03`>  
-- **have**:               `<len=0x0005`><`id=0x04`>`<piece index`>     
+- **have**:               `<len=0x0005`><`id=0x04`>`<book index`>   
+  The payload is the zero-based index of a book that has just been successfully downloaded and verified via the hash
 - **bitfield**:           `<len=0x0001+X`>`<id=0x05`>`<bitfield`>    
-  - bitfield : X bytes :  The payload is a bitfield representing the pieces that have been successfully downloaded.  
-                          The high bit in the first byte corresponds to piece index 0. Bits that are cleared indicated a missing piece,  
-                          and set bits indicate a valid and available piece. Spare bits at the end are set to zero.
+  - bitfield : X bytes :  The payload is a bitfield representing the books that have been successfully downloaded.  
+                          The high bit in the first byte corresponds to book index 0. Bits that are cleared indicated a missing book,  
+                          and set bits indicate a valid and available book. Spare bits at the end are set to zero.
 - **request**:            `<len=0x0009`>`<id=0x06`>`<index`>
-  - index : 8 bytes : index of the requested piece  
-- **piece**:              `<len=0x0009+X`>`<id=0x07`>`<index`>`<payload`>  
+  - index : 8 bytes : index of the requested book  
+- **book**:              `<len=0x0009+X`>`<id=0x07`>`<index`>`<payload`>  
   - index   : 8 bytes : index of the requested piece  
-  - payload : X bytes : data from file in binary  
+  - payload : X bytes : data from stuff in binary  
 - **cancel**:             `<len=0x0009`>`<id=0x08`>`<index`>  
-- **tracker notify**:     `<len=0x0001+X`>`<id=0x09`>`<payload size=X`>   
+  Cancel request for the book matching index number 
+- **handshake**:          '<len=0x29`>`<id=0x09><hash_info`>`<peer_id`>
+  - info_hash: 20 bytes : 20-byte SHA1 of the info dictionnary of the torrent file (used in tracker notify message)  
+  - peer_id: 20 bytes : 20-byte id that uniquely identify peer
+
+
+## Player-hub communication
+#### Message definition
+
+- **hub notify**:     `<len=0x0001+X`>`<id=0x10`>`<payload size=X`>   
   - payload : X bytes : bendoded dictionnary composed of b'key':value (bencoded value as bytefield, integer, list or dictionnary) 
       - b'info_hash': 20-byte SHA1 hash of the value of the info key from the Metainfo file.  
-      - b'peer_id': 20-byte SHA1 that uniquely identify peer
+      - b'peer_id': 20-byte id that uniquely identify peer
       - b'port':  listening port as integer
       - b'downloaded': downloaded size (including failed part) as integer      
       - b'uploaded' : uploaded size as integer 
       - b'left': left to download as integer
-      - b'event: either b'started', b'completed', b'stopped'   (started : no piece received, stopped: sent when client shutdown gracefylly,
+      - b'event: either b'started', b'completed', b'stopped'   (started : no piece received, stopped: sent when player shutdown gracefylly,
         completed: when all pieces are received)
         
-- **tracker answer**:    `<len=0x0001+X`>`<id=0x0A`>`<payload size=X`>  
+- **hub answer**:    `<len=0x0001+X`>`<id=0x12`>`<payload size=X`>  
   - payload : X bytes : bendoded dictionnary composed of b'key':value (bencoded value as bytefield, integer, list or dictionnary) 
     - failure reason: If present, then no other keys may be present. The value is a human-readable error message as to why the request failed (string).
     - warning message: (optional) The response still gets processed normally. The warning message is shown just like an error.
     - interval: Interval in seconds that the client should wait between sending regular requests to the tracker
     - min interval: (optional) Minimum announce interval. If present clients must not reannounce more frequently than this.
-    - tracker id: A string that the client should send back on its next announcements. If absent and a previous announce sent a tracker id, do not discard the old value; keep using it.
     - complete: number of peers with the entire file, i.e. seeders (integer)
     - incomplete: number of non-seeder peers, aka "leechers" (integer)
     - peers: (dictionary model) The value is a list of dictionaries, each with the following keys:
     - peer id: peer's self-selected ID, as described above for the tracker request (string)
 
-- **peer invalid IP**:    `<len=0x0001+X`>`<id=0x0B`>`<payload size=X`>  
+- **player invalid IP**:    `<len=0x0001+X`>`<id=0x13`>`<payload size=X`>  
   - payload : X bytes : bendoded dictionnary composed of b'key':value (bencoded value as bytefield, integer, list or dictionnary b ) 
     - b'list_peer': list of b'IP/port'     with IP=xxx.xxx.xxx.xxx
 
-- **handshake**:          '<len=0x29`>`<hash_info`>`<peer_id`>
-  - info_hash: 20 bytes : 20-byte SHA1 of the info dictionnary of the torrent file (used in tracker notify message)  
-  - peer_id: 20 bytes : 20-byte SHA1 that uniquely identify peer
 
-## Torrent format
-The content of a metainfo file (the file ending in ".torrent") is a bencoded dictionary, containing the keys listed below.
+## Library file format
+The content of a metainfo file (the file ending in ".libr") is a bencoded dictionary, containing the keys listed below.
 All character string values are UTF-8 encoded.  
-  - **announce**: The announce of the tracker (string) b'IP/port)   with IP=xxx.xxx.xxx.xxx
-  - **creation date**: (optional) the creation time of the torrent, in standard UNIX epoch format (integer, seconds since 1-Jan-1970 00:00:00 UTC)
-  - **created by:** (optional) name and version of the program used to create the .torrent (string)
-  - **info**: a dictionary that describes the file(s) of the torrent.
+  - **announce**: The announce of the hub (string) b'IP/port')   with IP=xxx.xxx.xxx.xxx
+  - **creation date**: (optional) the creation time of the library file, in standard UNIX epoch format (integer, seconds since 1-Jan-1970 00:00:00 UTC)
+  - **created by:** (optional) name and version of the program used to create the .libr (string)
+  - **info**: a dictionary that describes the stuff(s) of the library file.
 
-## Transaction Peer-Tracker
+
 
 
