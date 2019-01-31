@@ -1,7 +1,7 @@
 
-# Protocol réseau
+# Networking protocol
 
-![INFO](https://scontent-cdt1-1.xx.fbcdn.net/v/t1.15752-0/p480x480/51223812_359916258072054_4470877989529190400_n.png?_nc_cat=109&_nc_ht=scontent-cdt1-1.xx&oh=b0d44a09316279a2b56185153e0dd0c4&oe=5CB4C7E3)
+![INFO](https://scontent-cdt1-1.xx.fbcdn.net/v/t1.15752-0/p480x480/51427892_841606676174634_3727167710321180672_n.png?_nc_cat=111&_nc_ht=scontent-cdt1-1.xx&oh=1944c834695820d91198385a342aff38&oe=5CF5D08A)
 
 ## 1. Definitions
 1. Stuff (the actual data to share)
@@ -48,6 +48,9 @@
 
 ---
 ## 2. Initialisations
+
+![INITIALISATION](https://scontent.xx.fbcdn.net/v/t1.15752-9/51642155_323379508283201_1806439536478126080_n.png?_nc_cat=111&_nc_ad=z-m&_nc_cid=0&_nc_ht=scontent.xx&oh=89c096cbde011213742a3323b3e4adc3&oe=5CEF61B5)
+
 * To share a stuff, the player select a specific file it want to share. After selecting the file, the librarifier create a __library__ file. This library file is used by players to identify the Hub, it also define books of the stuff. Each stuff is identified in the exchange network by the SHA1 of the info field of the library file.
 
 * Initially the Hub starts with no registered players.
@@ -59,8 +62,10 @@
 ---
 ## 3. Processing and Requests
 
+![PROCESSING](https://scontent.xx.fbcdn.net/v/t1.15752-0/p480x480/50999263_241380393461495_613387773012869120_n.png?_nc_cat=100&_nc_ad=z-m&_nc_cid=0&_nc_ht=scontent.xx&oh=4874832d64ac84ba8a5e4d715b92462c&oe=5CB89D48)
+
 1. If a player wants to download a stuff it requests the Hub to send him a dictionary of players. The same request can be performed periodically.
-   
+
 2. The Hub sends back a dictionary to the Player, the Dictionary contains a list of player information (player id, ip address, listening port, seeder status).  The connection to the hub is closed after receiving the message.
 
 3. Once the Player receives the Dictionary it start sending a __handshaking__ request to all the other players in the dictionary.  
@@ -75,7 +80,7 @@
 
 7. The player send a __request__ message to a specific number of players who are interested. The __request__ message specifies which book is required.
 
-8. When a book is completely receivedm the player matchs the SHA1 checksum of the book to the one in the library file. If the integrity is correct, the player sends a __have__ message to the seeder player.
+8. When a book is completely received the player matches the SHA1 checksum of the book to the one in the library file. If the integrity is correct, the player sends a __have__ message to the seeder player.
    
 9. From to time the player can update its status to the hub by sending a __hub notify__ message.
 
@@ -182,7 +187,3 @@ All character string values are UTF-8 encoded.
   - **creation date**: (optional) the creation time of the library file, in standard UNIX epoch format (integer, seconds since 1-Jan-1970 00:00:00 UTC)
   - **created by:** (optional) name and version of the program used to create the .libr (string)
   - **info**: a dictionary that describes the stuff(s) of the library file.
-
-
-
-
