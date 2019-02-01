@@ -11,7 +11,7 @@
 
 2. **Library** (“torrent file” in BitTorrent)
     * this is a description of the _stuff_ to exchange
-    * it can be stored as a text file that will be shared to all _players_ (in a real case, this file could be stored on a webserver named “l411.me” that lists _library_ files)
+    * it can be stored as a text file that will be shared with all _players_ (in a real case, this file could be stored on a webserver named “l411.me” that lists _library_ files)
     * the file extension .libr will be used
     * it contains the following information
         * the address of the _hub_ (e.g., 192.168.6.66:42000)
@@ -75,11 +75,11 @@
 5. The _player_ sends an __interested__ or __not intersted__ message to other _players_. 
    The other _players_ sends an __interested__ or __not interested__ message to the _player_.
   
-6. The _player_ can decide to choke a _player_ at any time by sending a __choking__ message.
+6. The _player_ can decide to choke a _player_ at any time by sending a __choking__ message. __Choking__ message means that no data will be sent until __unchoking__ happens. There can be several reasons for __choking__ e.g. the __player__ has reached its maximum upload capacity or the other __player__ does not want any pieces.
 
-7. The _player_ send a __request__ message to a specific number of _players_ who are interested. The __request__ message specifies which _book_ is required.
+7. The _player_ sends a __request__ message to a specific number of _players_ who are interested. The __request__ message specifies which _book_ is required.
 
-8. When a _book_ is completely received the _player_ matches the SHA1 checksum of the _book_ to the one in the _library_ file. If its integrity is correct, the _player_ sends a __have__ message to the seeder _player_.
+8. When a _book_ is completely received, the _player_ matches the SHA1 checksum of the _book_ to the one in the _library_ file. If its integrity is maintained, the _player_ sends a __have__ message to the seeder _player_.
    
 9. From to time the _player_ can update its status to the _hub_ by sending a __hub notify__ message.
 
@@ -90,7 +90,7 @@
 
 * A _player_ can remove itself from the _hub_ dictionary by sending a __hub notify__ message whith event field value equal to 'stopped'.
 
-*  a _player_ can send __keep_alive__ to stay connected with the other _player_ for 30 minutes.
+*  A _player_ can send __keep_alive__ to stay connected with the other _player_ for 30 minutes.
 
 ## 5. Encoding
 
@@ -104,9 +104,7 @@ The messages are bencoded. Bencode can encode 4 different types:
 **An integer** is encoded as i`<integer encoded in base ten ASCII`>e. Leading zeros are not allowed (although the number zero is still represented as "0"). Negative values are encoded by prefixing the number with a hyphen-minus. The number 42 would thus be encoded as i42e, 0 as i0e, and -42 as i-42e. Negative zero is not permitted.  
 **A byte string** (a sequence of bytes, not necessarily characters) is encoded as `<length`>:`<contents`>. The length is encoded in base 10, like integers, but must be non-negative (zero is allowed); the contents are just the bytes that make up the string. The string "spam" would be encoded as 4:spam. The specification does not deal with encoding of characters outside the ASCII set.
 **A list** of values is encoded as l`<contents`>e . The contents consist of the bencoded elements of the list, in order, concatenated. A list consisting of the string "spam" and the number 42 would be encoded as: l4:spami42ee. Note the absence of separators between elements, and the first character is the letter 'l', not digit '1'.  
-**A dictionary** is encoded as d`<contents`>e. The elements of the dictionary are encoded each key immediately followed by its value.
-All keys must be byte strings and must appear in lexicographical order. A dictionary that associates the values 42 and "spam" with
-the keys "foo" and "bar", respectively (in other words, {"bar": "spam", "foo": 42}), would be encoded as follows: d3:bar4:spam3:fooi42ee.  
+**A dictionary** is encoded as d`<contents`>e. The elements of the dictionary are encoded each key immediately followed by its value. All keys must be byte strings and must appear in lexicographical order. A dictionary that associates the values 42 and "spam" with the keys "foo" and "bar", respectively (in other words, {"bar": "spam", "foo": 42}), would be encoded as follows: d3:bar4:spam3:fooi42ee.  
 
 
 ## 6. Player-player communication
@@ -116,7 +114,8 @@ The following protocol is inspired by the BitTorrent protocol with some modifica
 `<id=0x00`> : 1 by to code the message id
 #### Message definition
 - **keep alive**:         `<len=0x0000`>  
-- **choke**:              `<len=0x0001`>`<id=0x00`>    
+- **choke**:              `<len=0x0001`>`<id=0x00`>   
+- cho
 - **unchoke**:            `<len=0x0001`>`<id=0x01`>    
 - **interested**:         `<len=0x0001`>`<id=0x02`>
 - **not interested**:     `<len=0x0001`>`<id=0x03`>  
