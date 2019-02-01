@@ -143,9 +143,9 @@ The following protocol is inspired by the BitTorrent protocol with some modifica
       - b'info_hash': 20-byte SHA1 hash of the value of the info key from the _library_ file.  
       - b'player_id': 20-byte id that uniquely identifies _player_
       - b'port':  listening port as integer
-      - b'downloaded': downloaded size (including failed part) as integer      
-      - b'uploaded' : uploaded size as integer 
-      - b'left': left to download as integer
+      - b'downloaded': downloaded size (including failed part), in bytes, as integer      
+      - b'uploaded' : uploaded size, in bytes, as integer 
+      - b'left': left to download, in bytes, as integer
       - b'event: either b'started', b'completed', b'stopped'   (started : no _book_ received, stopped: sent when _player_ shutdown gracefully or the sender does not have the file anymore, completed: when all _book_ are received)
         
 - **hub answer**:    `<len=0x0001+X`>`<id=0x11`>`<payload size=X`>  
@@ -153,7 +153,7 @@ The following protocol is inspired by the BitTorrent protocol with some modifica
     - failure reason: If present, then no other keys may be present. The value is a human-readable error message as to why the request failed (string).
     - b'warning message': (optional) The response still gets processed normally. The warning message is shown just like an error.
     - b'interval': Interval in seconds that the _player_ should wait between sending regular requests to the _hub_
-    - b'min interval': (optional) Minimum announce interval. If present clients must not reannounce more frequently than this.
+    - b'min interval': (optional) Minimum announce interval, in seconds. If present clients must not reannounce more frequently than this.
     - b'complete': number of players with the entire file, i.e. seeders (integer)
     - b'incomplete': number of non-seeder players, aka "leechers" (integer)
     - b'players': (dictionary model) The value is a list of dictionaries, each with the following keys:
