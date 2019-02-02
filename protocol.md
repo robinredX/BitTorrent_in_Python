@@ -90,7 +90,7 @@
 
 * A _player_ can remove itself from the _hub_ dictionary by sending a __hub notify__ message whith event field value equal to 'stopped'.
 
-*  A _player_ can send __keep_alive__ to stay connected with the other _player_ for 30 minutes.
+* Peers may close a connection if they receive no messages for a certain period of time, so a __keep_alive__ message must be sent to maintain the connection alive if no command have been sent for 30 minutes.
 
 ## 5. Encoding
 
