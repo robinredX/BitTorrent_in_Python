@@ -61,7 +61,7 @@
 ---
 ## 3. Processing and Requests
 
-![PROCESSING](https://scontent.xx.fbcdn.net/v/t1.15752-0/p480x480/50999263_241380393461495_613387773012869120_n.png?_nc_cat=100&_nc_ad=z-m&_nc_cid=0&_nc_ht=scontent.xx&oh=4874832d64ac84ba8a5e4d715b92462c&oe=5CB89D48)
+![Image of Bittorrent network processes](https://github.com/robinredX/ProjectBittorrent/blob/master/bittorrentprocesses.jpg)
 
 1. If a _player_ wants to download a _stuff_ it requests the _hub_ to send him a dictionary of _players_. The same request can be performed periodically.
 
