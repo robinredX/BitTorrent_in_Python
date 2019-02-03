@@ -45,6 +45,9 @@
     * it provides, on demand by a _player_, a list of other _players_ to connect to
     * it does nothing else: it does not download or upload any _book_, does not know what _player_ has what _books_, etc.
 
+6. **Librarifier** 
+    * this is an independant program that generates the .libr file to exchange file information
+    
 ---
 ## 2. Initialisation
 
@@ -149,7 +152,7 @@ The following protocol is inspired by the BitTorrent protocol with some modifica
         
 - **hub answer**:    `<len=0x0001+X`>`<id=0x11`>`<payload size=X`>  
   - payload : X bytes : bendoded dictionary composed of b'key':value (bencoded value as bytefield, integer, list or dictionnary) 
-    - failure reason: If present, then no other keys may be present. The value is a human-readable error message as to why the request failed (string).
+    - b'failure reason': If present, then no other keys may be present. The value is a human-readable error message as to why the request failed (string).
     - b'warning message': (optional) The response still gets processed normally. The warning message is shown just like an error.
     - b'interval': Interval in seconds that the _player_ should wait between sending regular requests to the _hub_
     - b'min interval': (optional) Minimum announce interval, in seconds. If present clients must not reannounce more frequently than this.
@@ -179,3 +182,8 @@ All character string values are UTF-8 encoded.
   - **creation date**: (optional) the creation time of the _library_ file, in standard UNIX epoch format (integer, seconds since 1-Jan-1970 00:00:00 UTC)
   - **created by:** (optional) name and version of the program used to create the .libr (string)
   - **info**: a dictionary that describes the stuff(s) of the _library_ file.
+      - b'length' : file_size  (integer)
+      - b'name' : file_name (byte field)  
+      - b'piece_length' : book size (integer
+      - b'pieces' : 20-byte SHA1 of each book concatenated (book with index 0 first)
+      
