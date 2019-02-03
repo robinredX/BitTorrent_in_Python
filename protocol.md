@@ -115,7 +115,6 @@ The following protocol is inspired by the BitTorrent protocol with some modifica
 #### Message definition
 - **keep alive**:         `<len=0x0000`>  
 - **choke**:              `<len=0x0001`>`<id=0x00`>   
-- cho
 - **unchoke**:            `<len=0x0001`>`<id=0x01`>    
 - **interested**:         `<len=0x0001`>`<id=0x02`>
 - **not interested**:     `<len=0x0001`>`<id=0x03`>  
