@@ -9,6 +9,8 @@ import os, random
 import math
 import string
 from bencode import bencode, bdecode
+import os
+import binascii
 
 ROZALEAD_ID = b'RO0101'
 
@@ -64,10 +66,11 @@ class Metainfo(object):
     
    
 def generate_player_id():
-    player_id = b'-' + ROZALEAD_ID + b'-'
-    for i in range(12):
-        b = random.randint(0,255)
-        player_id += ((b).to_bytes(1, byteorder='little'))  
+    player_id = b'-' + ROZALEAD_ID + b'-' + binascii.b2a_hex(os.urandom(6))
+
+    # for i in range(12):
+    #     b = random.randint(0,255)
+    #     player_id += ((b).to_bytes(1, byteorder='little'))  
         
     return player_id
 
