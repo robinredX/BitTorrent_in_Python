@@ -3,9 +3,9 @@ Libraryfier module
 
 Generate .libr file
 
-usage : libraryfier.py addr path book_size output
+usage : librarifier.py addr path book_size output
 
-e.g. libraryfier.py '127.0.0.1/6666' 'C:\\file' 0x4000 'file.libr'
+e.g. librarifier.py '127.0.0.1/6666' 'C:\\file' 0x4000 'file.libr'
 
 """
 from hashlib import sha1

@@ -60,7 +60,7 @@ class Metainfo(object):
         
     def get_book_hash(self, book_index):
         if book_index < self._book_number:
-            return self._hashed[book_index*20:(book_index+1)*20]
+            return self._hashes[book_index*20:(book_index+1)*20]
         else :
             return None
     
