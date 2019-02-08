@@ -390,14 +390,14 @@ class HubAnswerMsg(ComMessage):
         info[b'min interval'] = self.min_interval
         info[b'complete'] = self.seeder_number
         info[b'incomplete'] = self.leecher_number
-        nb_players = len(players)
+        nb_players = len(self.players)
         info[b'players'] = []        
         for i in range(0, nb_players):
             item = {}
-            item[b'player id'] = players[i]['player_id']
-            item[b'ip'] = bytes(players[i]['ip'],"utf-8")
-            item[b'port'] = players[i]['port']
-            item[b'complete'] = players[i]['complete']    
+            item[b'player id'] = self.players[i]['player_id']
+            item[b'ip'] = bytes(self.players[i]['ip'],"utf-8")
+            item[b'port'] = self.players[i]['port']
+            item[b'complete'] = self.players[i]['complete']    
             info[b'players'].append(item)            
         return bencode(info)   
 
