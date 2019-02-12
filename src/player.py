@@ -1,15 +1,17 @@
 from threading import Thread
-import binascii
 import socket
 import queue
-import os
-
 import message
 import utils
 
 
 def main():
-    #Read .libr file, get Meta Info and Generate player for out player (client).
+    """
+     Read .libr file, get Meta Info and Generate player_id for out player (client).
+     Contact Hub and get player list.
+     Initiate connection with players and handshake.
+
+    """
 
     meta_file = utils.Metainfo('file.libr')
     player_id = utils.generate_player_id()
@@ -18,19 +20,26 @@ def main():
     c = consumer(q)
     c.daemon = True
     c.start()
+
     listen_port = 7777
     player_listen(q, listen_port).start()
 
     #TODO Contact Hub for Players list and report peer_id & port
 
     hub_socket = socket.create_connection((meta_file.get_hub_ip(), meta_file.get_hub_port()))
+    hub_msg = message.HubNotifyMsg(meta_file.get_info_hash(), player_id, listen_port, 0x8000, 0x4000, 65255558, b'start')\
+        .msg_encode()
 
+    hub_socket.sendall(hub_msg)
 
-    player_list = []
+    hub_recv = hub_socket.recv(1024)
+    status, remain, hub_recv = message.ComMessage.msg_decode(hub_recv)
+
+    players = hub_recv.players
 
     #TODO connect and Handshake per player
 
-    for player in player_list:
+    for player in players:
         ip = player[b'ip']
         port = player[b'port']
 
@@ -98,9 +107,9 @@ def handle_player_send(socket, q, receiver):
         while True:
             try:
                 message = socket.recv(1)
-                # Decode the message
+                #TODO Decode the message
                 if message is not None:
-                    # Handle different messages
+                    #TODO Handle different messages
                     if message == 'magic_move':
                         # q.put()
                         pass
