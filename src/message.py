@@ -148,7 +148,8 @@ class ComMessage(object):
                 if b'warning message' not in info.keys():   
                     info[b'warning message'] = b''
                 remain = msg[2+msg_length:]
-                obj = HubAnswerMsg(info[b'failure reason'], info[b'warning message'], info[b'interval'], info[b'min interval'], info[b'complete'], info[b'incomplete'], info[b'players'])
+                obj = HubAnswerMsg(info[b'failure reason'], info[b'warning message'], info[b'interval'], info[b'min interval'], info[b'complete'], info[b'incomplete'], None)
+                obj.store_players(info[b'players'])
                 return status, remain, obj        
 
             elif msg[2] == CODE['player invalid address'] :
@@ -390,17 +391,35 @@ class HubAnswerMsg(ComMessage):
         info[b'min interval'] = self.min_interval
         info[b'complete'] = self.seeder_number
         info[b'incomplete'] = self.leecher_number
-        nb_players = len(self.players)
-        info[b'players'] = []        
+     
+        if self.players != None:
+            nb_players = len(self.players)
+            info[b'players'] = []    
+            for i in range(0, nb_players):
+                print(self.players[i])
+                item = {}
+                item[b'player id'] = self.players[i]['player_id']
+                item[b'ip'] = bytes(self.players[i]['ip'],"utf-8")
+                item[b'port'] = self.players[i]['port']
+                item[b'complete'] = self.players[i]['complete']    
+                info[b'players'].append(item)            
+        return bencode(info)  
+    
+    def store_players(self, players_list):
+        nb_players = len(players_list)
+        print(players_list)
+        print(nb_players)
+        self.players = []    
         for i in range(0, nb_players):
+            print
             item = {}
-            item[b'player id'] = self.players[i]['player_id']
-            item[b'ip'] = bytes(self.players[i]['ip'],"utf-8")
-            item[b'port'] = self.players[i]['port']
-            item[b'complete'] = self.players[i]['complete']    
-            info[b'players'].append(item)            
-        return bencode(info)   
-
+            item['player_id'] = players_list[i][b'player id']
+            item['ip'] = players_list[i][b'ip']
+            item['port'] = players_list[i][b'port']
+            item['complete'] = players_list[i][b'complete']
+            self.players.append(item)          
+        print(self.players)
+        
     def msg_encode(self):
         msg = (((self._length>>8)&0xFF).to_bytes(1, byteorder='little')) 
         msg += ((self._length&0xFF).to_bytes(1, byteorder='little'))        
