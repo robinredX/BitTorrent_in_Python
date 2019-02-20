@@ -1,20 +1,3 @@
-from threading import Thread
-import socket
-import queue
-import message
-import utils
-
-
-def main():
-    """
-     Read .libr file, get Meta Info and Generate player_id for out player (client).
-     Contact Hub and get player list.
-     Initiate connection with players and handshake.
-
-    """
-
-    meta_file = utils.Metainfo('file.libr')
-    player_id = utilsfrom threading import Thread
 import socket
 import queue
 import message
