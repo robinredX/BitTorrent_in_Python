@@ -71,8 +71,8 @@ def player_listen(my_details):
             if objMsg.code is 0x00:
                   handshake_send = message.HandshakeMsg(my_details['player_ip'], my_details['info_hash']).msg_encode()
                   client_socket.sendall(handshake_send)
-            handle_player_listen(client_socket, q, my_details).start()
-            handle_player_send(client_socket, q, my_details).start()
+            handle_player_listen(client_socket, my_details).start()
+            handle_player_send(client_socket, my_details).start()
 
     t = Thread(target=handle)
     return t
@@ -122,7 +122,6 @@ def handle_player_listen(socket, my_details):
             except:
                 print("Client disconnected", socket)
                 break
-        q.put()
 
     t = Thread(target=handle, args = [my_details])
     return t
@@ -144,7 +143,6 @@ def handle_player_send(socket, receiver):
                 if message is not None:
                     #TODO Handle different messages
                     if message == 'magic_move':
-                        # q.put()
                         pass
                     else:
                         print(message)
@@ -154,7 +152,6 @@ def handle_player_send(socket, receiver):
             except:
                 print("Client disconnected", socket)
                 break
-        q.put()
 
     t = Thread(target=handle)
     return t
