@@ -24,7 +24,7 @@ def main():
     my_details['info_hash'] = meta_file.get_info_hash()
     my_details['player_port'] = listen_port
     my_details['stuff_size'] = meta_file.get_stuff_size()
-    player_listen(q, my_details).start()
+    player_listen(my_details).start()
     
     # Contact hub and get list of players
     hub_socket = socket.create_connection((meta_file.get_hub_ip(), meta_file.get_hub_port()))
@@ -51,12 +51,12 @@ def main():
         print(received_message)
         status, remain, objMsg = message.ComMessage.msg_decode(received_message)
         if objMsg.code is 0x00: # Create two threads when mututal handshake happens
-            handle_player_listen(s, q, False).start()
-            handle_player_send(s, q, False).start()        
+            handle_player_listen(s, False).start()
+            handle_player_send(s, False).start()
 
 # Players who connect with the player and handshake  
             
-def player_listen(q, my_details):
+def player_listen(my_details):
     def handle():
         server_socket_no = my_details['player_port']
         server_socket = socket.socket()
@@ -80,7 +80,7 @@ def player_listen(q, my_details):
 
 # listen thread
     
-def handle_player_listen(socket, q, my_details):
+def handle_player_listen(socket, my_details):
     def handle(my_details):
         print("Received connection", socket)
         other_player_choked = False
@@ -129,7 +129,7 @@ def handle_player_listen(socket, q, my_details):
 
 # Send thread
     
-def handle_player_send(socket, q, receiver):
+def handle_player_send(socket, receiver):
     def handle():
         print("Received connection", socket)
 
