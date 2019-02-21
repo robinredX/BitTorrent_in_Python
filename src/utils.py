@@ -52,6 +52,9 @@ class Metainfo(object):
     def get_stuff_size(self):
         return self._stuff_length
         
+    def get_book_length(self):
+        return self._book_length
+        
     def get_hub_ip(self):
         return self._hub_ip
     
