@@ -77,5 +77,30 @@ def generate_player_id():
         
     return player_id
 
+
+def read_socket_buffer(f):
+    res = b''
+
+    dt1 = time.time_ns()
+
+    count = 0
+    #print(dt1)
+    while True:
+        dt2 = time.time_ns()       
+        count += 1
+        b = f.recv(1)
+        
+        if len(b) == 0:
+            break
+        res += b    
+        if len(res) > 16 :
+            break
+            
+        if (dt2-dt1)>1:    
+            break
+        time.sleep(0.000000001)    
+
+    return res
+
 if __name__ == '__main__':
     pass
