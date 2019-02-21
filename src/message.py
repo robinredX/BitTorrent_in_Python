@@ -88,12 +88,16 @@ class ComMessage(object):
             remain = msg[4:]
             if msg[2] == CODE['choke']:
                 return status, remain, ChokeMsg()
+            
             elif msg[2] == CODE['unchoke']:     
                 return status, remain, UnchokeMsg()
+            
             elif msg[2] == CODE['interested']:              
                 return status, remain, InterestedMsg()
+            
             elif msg[2] == CODE['not interested']:  
                 return status, remain, NotInterestedMsg()
+            
             elif msg[2] == CODE['have']: 
                 if msg_length != 5 :
                     raise ValueError("Message corrupted")
@@ -103,16 +107,18 @@ class ComMessage(object):
                         book_index = book_index<<8 | msg[3+i]
                     remain = msg[7:]                    
                 return status, remain, HaveMsg(book_index)
+            
             elif msg[2] == CODE['bitfield']: 
                 if msg_length < 2 :
                     raise ValueError("Message corrupted")            
                 else :
                     nb_bytes = msg_length - 1
-                    remain = msg[3+nb_bytes:]
-                    bitfield = 0
+                    remain = msg[3:]
+                    bitfield = bytearray(nb_bytes)
                     for i in range(0, nb_bytes):
-                        bitfield[i] = remain[i]                      
-                return  status, remain, BitfieldMsg(bitfield)               
+                        bitfield[i] = remain[i]                         
+                return  status, remain, BitfieldMsg(bitfield)
+            
             elif msg[2] == CODE['request']:  
                 if msg_length != 5 :
                     raise ValueError("Message corrupted")
@@ -122,6 +128,7 @@ class ComMessage(object):
                     for i in range(0,4):
                         book_index = book_index<<8 | msg[3+i]              
                 return  status, remain, RequestMsg(book_index)  
+            
             elif msg[2] == CODE['book']:  
                 book_index = 0
                 for i in range(0,4):
@@ -556,14 +563,15 @@ if __name__ == '__main__':
     # print(objMsg.get_message_type())
     # print(objMsg.get_book_index())    
     
-    # bitfield = [0x35, 0x26, 0xEF]
-    # msg = BitfieldMsg(bitfield).msg_encode()
-    # print(msg)   
-    # status, remain, objMsg = ComMessage.msg_decode(msg)
-    # print(status)
-    # print(remain)
-    # print(objMsg.get_message_type())    
-    # print(hex(objMsg.get_bitfield()))
+    bitfield = bytearray([0x35, 0x26, 0xEF])
+    
+    msg = BitfieldMsg(bitfield).msg_encode()
+    print(msg)   
+    status, remain, objMsg = ComMessage.msg_decode(msg)
+    print(status)
+    print(remain)
+    print(objMsg.get_message_type())    
+    print(objMsg.get_bitfield())
     
     # msg = RequestMsg(2562).msg_encode()
     # print(msg)   
