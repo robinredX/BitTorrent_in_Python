@@ -72,8 +72,15 @@ class ComMessage(object):
         usage : status, remain, objMsg = ComMessage.msg_decode(msg)         
         """
         status = 0
+        
+        if len(msg) < 2:
+            status = -1   
+            return status, msg, None        
+        
         msg_length = (msg[0]<<8)+msg[1]
         if msg_length != (len(msg) - 2):
+            #print(msg_length)
+            #print(len(msg))
             status = -1   
             return status, msg, None
         
@@ -207,25 +214,22 @@ class HaveMsg(ComMessage):
 
         
 class BitfieldMsg(ComMessage):
+    """ Bitfield message 
+        Input: bitfield : byte array
+    """    
     def __init__(self, bitfield):
         self.bitfield = bitfield  
-        
-        nb_bytes = 0       
-        index = self.bitfield
-        while index:
-            index = index >> 8
-            nb_bytes += 1    
+        self.bitfield_length = len(self.bitfield)
+ 
         super(BitfieldMsg, self).__init__('bitfield')
-        self._length = 1 + nb_bytes
+        self._length = 1 + self.bitfield_length
         
     def msg_encode(self):
         msg = (((self._length>>8)&0xFF).to_bytes(1, byteorder='little')) 
         msg += ((self._length&0xFF).to_bytes(1, byteorder='little'))        
-        msg += ((self.message_code).to_bytes(1, byteorder='little'))
-        
-        nb_bytes = self._length - 1
-        for i in range(0, nb_bytes):
-            msg += ((self.bitfield >> 8*(nb_bytes-1-i))&0xFF).to_bytes(1, byteorder='little')
+        msg += ((self.message_code).to_bytes(1, byteorder='little'))        
+        msg += self.bitfield
+  
         return msg        
      
     def get_bitfield(self):
@@ -314,7 +318,6 @@ class HubNotifyMsg(ComMessage):
         super(HubNotifyMsg, self).__init__('hub notify') 
         self._length = len(self._bencode_info()) + 1
         
-        
     def _bencode_info(self):
         info = {}
         info[b'info_hash'] = self.info_hash 
@@ -378,6 +381,7 @@ class HubAnswerMsg(ComMessage):
         self.seeder_number = seeder_number
         self.leecher_number = leecher_number
         self.players = players
+        #print(self.players)        
         super(HubAnswerMsg, self).__init__('hub answer') 
         self._length = len(self._bencode_info()) + 1
 
@@ -391,41 +395,38 @@ class HubAnswerMsg(ComMessage):
         info[b'min interval'] = self.min_interval
         info[b'complete'] = self.seeder_number
         info[b'incomplete'] = self.leecher_number
-     
         if self.players != None:
             nb_players = len(self.players)
             info[b'players'] = []    
             for i in range(0, nb_players):
-                print(self.players[i])
                 item = {}
                 item[b'player id'] = self.players[i]['player_id']
                 item[b'ip'] = bytes(self.players[i]['ip'],"utf-8")
                 item[b'port'] = self.players[i]['port']
                 item[b'complete'] = self.players[i]['complete']    
                 info[b'players'].append(item)            
-        return bencode(info)  
-    
+        return bencode(info)   
+
+
     def store_players(self, players_list):
         nb_players = len(players_list)
-        print(players_list)
-        print(nb_players)
         self.players = []    
         for i in range(0, nb_players):
-            print
             item = {}
             item['player_id'] = players_list[i][b'player id']
             item['ip'] = players_list[i][b'ip']
             item['port'] = players_list[i][b'port']
             item['complete'] = players_list[i][b'complete']
             self.players.append(item)          
-        print(self.players)
+        
         
     def msg_encode(self):
         msg = (((self._length>>8)&0xFF).to_bytes(1, byteorder='little')) 
         msg += ((self._length&0xFF).to_bytes(1, byteorder='little'))        
         msg += ((self.message_code).to_bytes(1, byteorder='little'))        
-        
+
         msg += self._bencode_info()
+
         return msg        
     
     def get_error(self):
@@ -487,8 +488,8 @@ if __name__ == '__main__':
     player_id = utils.generate_player_id()
     metainfo = utils.Metainfo("E:\\Dev\\Python\\BitTorrent2\\metainfo.libr")
     
-    msg = HubNotifyMsg(metainfo.get_info_hash(), player_id, 7777, 0x8000, 0x4000, 65255558, b'start').msg_encode()
-    status, remain, objMsg = ComMessage.msg_decode(msg)
+    # msg = HubNotifyMsg(metainfo.get_info_hash(), player_id, 7777, 0x8000, 0x4000, 65255558, b'start').msg_encode()
+    # status, remain, objMsg = ComMessage.msg_decode(msg)
     
     players = [
         {'player_id':utils.generate_player_id(), 'ip':'127.0.0.1', 'port':7896, 'complete':1},
@@ -506,88 +507,92 @@ if __name__ == '__main__':
     print(objMsg.get_incomplete())
     print(objMsg.get_players())
 
-    invalid_players = [b'192.123.128.213/3366',b'148.253.125.32/6658',b'155.63.25.32/2356',b'126.35.98.36/8521']
-    msg = PlayerInvalidAddrMsg(invalid_players).msg_encode()
-    print(msg)
-    status, remain, objMsg = ComMessage.msg_decode(msg)
-    print(objMsg.get_invalid_players())
+    # invalid_players = [b'192.123.128.213/3366',b'148.253.125.32/6658',b'155.63.25.32/2356',b'126.35.98.36/8521']
+    # msg = PlayerInvalidAddrMsg(invalid_players).msg_encode()
+    # print(msg)
+    # status, remain, objMsg = ComMessage.msg_decode(msg)
+    # print(objMsg.get_invalid_players())
    
-    msg = KeepAliveMsg().msg_encode()
-    print(msg)
-    status, remain, objMsg = ComMessage.msg_decode(msg)
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())
+    # msg = KeepAliveMsg().msg_encode()
+    # print(msg)
+    # status, remain, objMsg = ComMessage.msg_decode(msg)
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())
     
-    msg = ChokeMsg().msg_encode()
-    print(msg)
-    status, remain, objMsg = ComMessage.msg_decode(msg)    
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())
+    # msg = ChokeMsg().msg_encode()
+    # print(msg)
+    # status, remain, objMsg = ComMessage.msg_decode(msg)    
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())
     
-    msg = UnchokeMsg().msg_encode()
-    print(msg) 
-    status, remain, objMsg = ComMessage.msg_decode(msg) 
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())
+    # msg = UnchokeMsg().msg_encode()
+    # print(msg) 
+    # status, remain, objMsg = ComMessage.msg_decode(msg) 
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())
     
-    msg = InterestedMsg().msg_encode()
-    print(msg)
-    status, remain, objMsg = ComMessage.msg_decode(msg) 
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())    
+    # msg = InterestedMsg().msg_encode()
+    # print(msg)
+    # status, remain, objMsg = ComMessage.msg_decode(msg) 
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())    
     
-    msg = NotInterestedMsg().msg_encode()
-    print(msg)  
-    status, remain, objMsg = ComMessage.msg_decode(msg)
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())
+    # msg = NotInterestedMsg().msg_encode()
+    # print(msg)  
+    # status, remain, objMsg = ComMessage.msg_decode(msg)
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())
     
-    msg = HaveMsg(2562).msg_encode()
-    print(msg)
-    status, remain, objMsg = ComMessage.msg_decode(msg) 
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())
-    print(objMsg.get_book_index())    
+    # msg = HaveMsg(2562).msg_encode()
+    # print(msg)
+    # status, remain, objMsg = ComMessage.msg_decode(msg) 
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())
+    # print(objMsg.get_book_index())    
     
-    msg = BitfieldMsg(0x3526EF).msg_encode()
-    print(msg)   
-    status, remain, objMsg = ComMessage.msg_decode(msg)
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())    
-    print(hex(objMsg.get_bitfield()))
+    # msg = BitfieldMsg(0x3526EF).msg_encode()
+    # print(msg)   
+    # status, remain, objMsg = ComMessage.msg_decode(msg)
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())    
+    # print(hex(objMsg.get_bitfield()))
     
-    msg = RequestMsg(2562).msg_encode()
-    print(msg)   
-    status, remain, objMsg = ComMessage.msg_decode(msg)  
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())
-    print(objMsg.get_book_index())
+    # msg = RequestMsg(2562).msg_encode()
+    # print(msg)   
+    # status, remain, objMsg = ComMessage.msg_decode(msg)  
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())
+    # print(objMsg.get_book_index())
     
-    msg = BookMsg(2562, b'payload').msg_encode()
-    print(msg)     
-    status, remain, objMsg = ComMessage.msg_decode(msg)  
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())  
-    print(objMsg.get_book_index())
-    print(objMsg.get_payload())
+    # msg = BookMsg(2562, b'payload').msg_encode()
+    # print(msg)     
+    # status, remain, objMsg = ComMessage.msg_decode(msg)  
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())  
+    # print(objMsg.get_book_index())
+    # print(objMsg.get_payload())
     
-    msg = HandshakeMsg(player_id,metainfo.get_info_hash()).msg_encode()
-    print(msg) 
-    status, remain, objMsg = ComMessage.msg_decode(msg)  
-    print(status)
-    print(remain)
-    print(objMsg.get_message_type())    
-    print(objMsg.get_player_id())
-    print(objMsg.get_info_hash())    
+    # msg = HandshakeMsg(player_id,metainfo.get_info_hash()).msg_encode()
+    # print(msg) 
+    # status, remain, objMsg = ComMessage.msg_decode(msg)  
+    # print(status)
+    # print(remain)
+    # print(objMsg.get_message_type())    
+    # print(objMsg.get_player_id())
+    # print(objMsg.get_info_hash())    
+    
+    
+  
+
     
     
   
