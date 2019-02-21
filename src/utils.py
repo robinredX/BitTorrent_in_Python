@@ -66,7 +66,9 @@ class Metainfo(object):
             return self._hashes[book_index*20:(book_index+1)*20]
         else :
             return None
-    
+        
+    def get_book_number():
+        return self._book_number    
    
 def generate_player_id():
     player_id = b'-' + ROZALEAD_ID + b'-' + binascii.b2a_hex(os.urandom(6))
