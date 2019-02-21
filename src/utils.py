@@ -4,6 +4,7 @@ Utils module
 
 
 """
+import time
 from hashlib import sha1
 import os, random
 import math
@@ -67,7 +68,7 @@ class Metainfo(object):
         else :
             return None
         
-    def get_book_number():
+    def get_book_number(self):
         return self._book_number    
    
 def generate_player_id():
