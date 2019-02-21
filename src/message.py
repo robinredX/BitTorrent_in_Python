@@ -110,8 +110,8 @@ class ComMessage(object):
                     nb_bytes = msg_length - 1
                     remain = msg[3+nb_bytes:]
                     bitfield = 0
-                    for i in range(nb_bytes):
-                        bitfield = bitfield<<8 | msg[3+i]                      
+                    for i in range(0, nb_bytes):
+                        bitfield[i] = remain[i]                      
                 return  status, remain, BitfieldMsg(bitfield)               
             elif msg[2] == CODE['request']:  
                 if msg_length != 5 :
@@ -556,7 +556,8 @@ if __name__ == '__main__':
     # print(objMsg.get_message_type())
     # print(objMsg.get_book_index())    
     
-    # msg = BitfieldMsg(0x3526EF).msg_encode()
+    # bitfield = [0x35, 0x26, 0xEF]
+    # msg = BitfieldMsg(bitfield).msg_encode()
     # print(msg)   
     # status, remain, objMsg = ComMessage.msg_decode(msg)
     # print(status)
@@ -589,6 +590,10 @@ if __name__ == '__main__':
     # print(objMsg.get_message_type())    
     # print(objMsg.get_player_id())
     # print(objMsg.get_info_hash())    
+    
+    
+  
+
     
     
   
