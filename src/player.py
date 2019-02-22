@@ -149,6 +149,8 @@ class PlayerCommunication(object):
                             # Update other_bitfield   
                         if objMsg.get_message_type == 'choke':
                             other_not_choked = False
+                            choke_message = message.ChokeMsg().msg_encode()
+                            client_socket.sendall(choke_message)
                         if objMsg.get_message_type == 'bitfield':                            
                             other_bitfield = objMsg.get_bitfield() # Other player's bitfield
                             count = 0
@@ -179,7 +181,7 @@ class PlayerCommunication(object):
                     print("Client disconnected", socket)
                     break
 
-        def handle_player_send(self,s,client_socket, my_bitfield, other_player_choked): # Send thread
+        def handle_player_send(self,s,client_socket, my_bitfield, other_not_choked): # Send thread
             def handle():
                 while True:
                     try:
@@ -189,7 +191,7 @@ class PlayerCommunication(object):
                             if objMsg.get_message_type == 'request' and other_not_choked == True: # Book request
                                 requested_book_index = objMsg.get_book_index()
                                 if bitfield[[requested_book_index]] == 1 and Other_not_choked == True:
-                                    book_message = BookMsg(requested_book_index, book_payload).msg_encode()
+                                    book_message = message.BookMsg(requested_book_index, book_payload).msg_encode()
                                     client_socket.sendall(book_message)  
                         else:
                             print("Message is None", socket)
