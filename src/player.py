@@ -25,19 +25,18 @@ def main():
     meta_file = utils.Metainfo('file.libr')
     player_id = utils.generate_player_id() 
     listen_port = generate_port()
-    max_connections = 30 
-    generate_player(listen_port)
+    max_connections = 30
     host = socket.gethostname() # TODO Generate host names
-    s = socket.socket()
+    s = socket.socket() # Create socket
     s.bind(host, port)
-    s.listen()   
+    s.listen()  # Act as a server 
     q = queue.Queue(maxsize = 0) # Infinite queue
     
     hub_connect_send = Thread(handle = HubCommunication.communicate_with_hub(s, meta_file, player_id, listen_port), args(q,))
     hub_connect_send.setDaemon = True
     hub_connect_send.start()
     
-    player_connect = Thread(PlayerCommunication.handshakes(self, s, listen_port, player_id, meta_file, hub_communication, max_connections), args(q,))
+    player_connect = Thread(PlayerCommunication.handshakes(self, s, listen_port, player_id, meta_file, max_connections), args(q,))
     hub_connect_send.setDaemon = True
     hub_connect_send.start()
     
@@ -50,12 +49,7 @@ def generate_port(): # Generates port and initiates player
         generate_port()
     temp_conn.close()
     return listen_port
-    
-def generate_player(self, listen_port):      
-    server_socket = socket.socket() # Create socket
-    player_socket = server_socket.bind(('localhost', self.listen_port))
-    player_socket.listen() # Act as a server          
-            
+         
 class HubCommunication(object): 
     """
     Obtain hub's port and hub's ip along with file info hash form the metafile
