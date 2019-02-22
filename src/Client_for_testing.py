@@ -5,7 +5,7 @@ from threading import Thread
 from netutils import read_line
 
 def main():
-    s = socket.create_connection(('localhost', 7776))
+    s = socket.create_connection(('localhost', 7777))
     print(s)
     # listen before you speak!
     listen(s).start()
