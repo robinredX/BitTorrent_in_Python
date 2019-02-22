@@ -33,28 +33,28 @@ def main():
     s.listen()   
     q = queue.Queue(maxsize = 0) # Infinite queue
     
-    hub_connect = Thread(handle = HubCommunication.communicate_with_hub(s, meta_file, player_id, listen_port), args=(q,))
-    hub_connect.setDaemon = True
-    hub_connect.start()
+    hub_connect_send = Thread(handle = HubCommunication.communicate_with_hub(s, meta_file, player_id, listen_port), args(q,))
+    hub_connect_send.setDaemon = True
+    hub_connect_send.start()
     
-    player_connect = Thread(handle = PlayerCommunication.handshakes(self, s, listen_port, player_id, meta_file, max_connections), args=(q,))
+    player_connect = Thread(PlayerCommunication.handshakes(self, s, listen_port, player_id, meta_file, hub_communication, max_connections), args(q,))
     hub_connect_send.setDaemon = True
     hub_connect_send.start()
     
     
 def generate_port(): # Generates port and initiates player
-        listen_port = random.randint(7000,8000)
-        try:
-            temp_conn = socket.socket()          
-        except:
-            generate_port()
-        temp_conn.close()
-        return listen_port
+    listen_port = random.randint(7000,8000)
+    try:
+        temp_conn = socket.socket()          
+    except:
+        generate_port()
+    temp_conn.close()
+    return listen_port
     
 def generate_player(self, listen_port):      
-            server_socket = socket.socket() # Create socket
-            player_socket = server_socket.bind(('localhost', self.listen_port))
-            player_socket.listen() # Act as a server          
+    server_socket = socket.socket() # Create socket
+    player_socket = server_socket.bind(('localhost', self.listen_port))
+    player_socket.listen() # Act as a server          
             
 class HubCommunication(object): 
     """
@@ -89,8 +89,8 @@ class PlayerCommunication(object):
     Handshake with every player in the list obtained from the hub.
     Initiate two threads.
     """
-    def __init__(self, s, listen_port, player_id, meta_file, max_connections): # Maximum number of connections
-        self.players = hub_communication.communicate_with_hub(s, meta_file, player_id, listen_port)
+    def __init__(self, s, listen_port, player_id, meta_file, hub_communication, max_connections): # Maximum number of connections
+        self.players = hub_communication.communicate_with_hub
         self.listen_port = listen_port
         self.player_id = player_id
         self.info_hash = meta_file.get_info_hash
@@ -126,6 +126,7 @@ class PlayerCommunication(object):
 
     def handle_player_listen(self,client_socket, my_bitfield, other_player_choked): # Listen thread
         def handle():
+            # TODO import books class for book management and bitfields
             other_bitfield = [] # Stores bitfield of other players
             already_received = [] 
             remain_received = [] # Stores remains of received book messages
@@ -142,16 +143,14 @@ class PlayerCommunication(object):
                             unchoke_send = message.UnchokeMsg().msg_encode()
                             server_socket.sendall(unchoke_send)  
                             other_not_choked = True
-                        if objMsg.get_message_type == 'keep alive':  # Keep alive message
+                        elif objMsg.get_message_type == 'keep alive':  # Keep alive message
                             time.sleep(30)
-                        if objMsg.get_message_type == 'have': # If receive a have message from a player, update bitfield
+                        elif objMsg.get_message_type == 'have': # If receive a have message from a player, update bitfield
                             have_book_index = objMsg.get_book_index()
                             # Update other_bitfield   
-                        if objMsg.get_message_type == 'choke':
+                        elif objMsg.get_message_type == 'choke':
                             other_not_choked = False
-                            choke_message = message.ChokeMsg().msg_encode()
-                            client_socket.sendall(choke_message)
-                        if objMsg.get_message_type == 'bitfield':                            
+                        elif objMsg.get_message_type == 'bitfield':                            
                             other_bitfield = objMsg.get_bitfield() # Other player's bitfield
                             count = 0
                             count1 = 0
@@ -159,7 +158,7 @@ class PlayerCommunication(object):
                                 if my_bitfield[[i]] == 0 and other_bitfield[[i]] == 1: 
                                     interested_message = message.IntererestedMsg(i).msg_encode()
                                     client_socket.sendall(interested_message) 
-                                if other_bitfield[[i]] is 1:
+                                elif other_bitfield[[i]] is 1:
                                     count += 1
                                     if my_bitfield[[i]] is 1:
                                         count1 += 1
@@ -181,7 +180,7 @@ class PlayerCommunication(object):
                     print("Client disconnected", socket)
                     break
 
-        def handle_player_send(self,s,client_socket, my_bitfield, other_not_choked): # Send thread
+        def handle_player_send(self,s,client_socket, my_bitfield, other_player_choked): # Send thread
             def handle():
                 while True:
                     try:
@@ -191,11 +190,11 @@ class PlayerCommunication(object):
                             if objMsg.get_message_type == 'request' and other_not_choked == True: # Book request
                                 requested_book_index = objMsg.get_book_index()
                                 if bitfield[[requested_book_index]] == 1 and Other_not_choked == True:
-                                    book_message = message.BookMsg(requested_book_index, book_payload).msg_encode()
+                                    book_message = BookMsg(requested_book_index, book_payload).msg_encode()
                                     client_socket.sendall(book_message)  
                         else:
                             print("Message is None", socket)
                             break
-                except:
-                    print("Client disconnected", socket)
-                    break       
+                    except:
+                        print("Client disconnected", socket)
+                        break       
