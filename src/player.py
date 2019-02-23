@@ -7,95 +7,322 @@ Created on Thu Feb 21 11:21:01 2019
 
 from threading import Thread
 import socket
+import sys,os
 import queue
 import message
 import utils
 import random
 # import pickle 
 import time
+import netifaces as ni
+from books import Books
 
-def main():
+
+
+STATE_INIT=0
+STATE_UPDATE=1
+STATE_INTERESTED=2
+
+STATE_WAIT_QUEUE=10
+
+def main(root_dir, meta_file_path, player_id):
     """
      Read .libr file, get Meta Info and Generate player_id for out player (client).
      Contact Hub and get player list.
      Initiate connection with players and handshake.
 
     """
+    meta_file = utils.Metainfo(meta_file_path)
+    book_list = []
+    if player_id == None :
+        print('Create player id')
+        player_id = utils.generate_player_id() 
+    print(meta_file.get_file_name())    
+        
+        
+    print(player_id.decode("utf-8"))
+    if os.path.exists(root_dir) == True :
+        player_dir = root_dir+'\\'+player_id.decode("utf-8")
+        if os.path.exists(player_dir) == False:
+            os.mkdir(player_dir)            
+        list_file = os.listdir(player_dir)
+        
+        if len(list_file) > 0 :            
+            for file in list_file:
+                book_list.append(Books(player_dir+'\\'+file, meta_file))
+        else:
+            print('Create new stuff')
+            book_list.append(Books(player_dir+'\\'+meta_file.get_file_name(), meta_file))
+            
+    print(book_list[0].get_bitfield())
     
-    meta_file = utils.Metainfo('file.libr')
-    player_id = utils.generate_player_id() 
-    listen_port = generate_port()
-    max_connections = 30
-    host = socket.gethostname() # TODO Generate host names
-    s = socket.socket() # Create socket
-    s.bind(host, port)
-    s.listen()  # Act as a server 
-    q = queue.Queue(maxsize = 0) # Infinite queue
+    # get the ip address
+    interface_id = ni.gateways()['default'][2][1]
+    #print(ni.interfaces())
+    ip = ni.ifaddresses(interface_id)[2][0]['addr'] 
+
+    ip = 'localhost'
+    listening_port = random.randint(7000,8000)
+    count = 0    
     
-    hub_connect_send = Thread(handle = HubCommunication.communicate_with_hub(s, meta_file, player_id, listen_port), args(q,))
-    hub_connect_send.setDaemon = True
-    hub_connect_send.start()
+   
+    player_cnx = PlayerConnectionManager(player_id, ip, listening_port, meta_file, book_list[0])       
+   
+    while True :    
+        try:      
+            player_cnx = PlayerConnectionManager(player_id, ip, listening_port, meta_file, book_list[0])
+            player_manager_queue = player_cnx.get_player_manager_queue()
+            break
+        except:
+            count += 1
+            listening_port = random.randint(7000,8000)
+            if count > 50:
+                print('Client: can not get a connection port. Terminate.')
+                sys.exit(-1)
+                break    
     
-    player_connect = Thread(PlayerCommunication.handshakes(self, s, listen_port, player_id, meta_file, max_connections), args(q,))
-    hub_connect_send.setDaemon = True
-    hub_connect_send.start()
+    count = 0
+    while True :
+        try :
+            HubCommunication(meta_file, player_id, listening_port, book_list[0], player_manager_queue)
+            print('Player ' + str(player_id) + ' connected to hub')
+            break
+        except:
+            
+            count += 1
+            print('Connection to hub attemp ' + str(count) + ' fail.')
+            #time.sleep(5)
+            if count > 5:
+                print('Can not connect to the hub. Terminate.')
+                sys.exit(-1)
+    
+    # hub_connect_send = Thread(handle = HubCommunication.communicate_with_hub(s, meta_file, player_id, listen_port), args(q,))
+    # hub_connect_send.setDaemon = True
+    # hub_connect_send.start()
+    
+    # player_connect = Thread(PlayerCommunication.handshakes(self, s, listen_port, player_id, meta_file, max_connections), args(q,))
+    # hub_connect_send.setDaemon = True
+    # hub_connect_send.start()
     
     
-def generate_port(): # Generates port and initiates player
-    listen_port = random.randint(7000,8000)
-    try:
-        temp_conn = socket.socket()          
-    except:
-        generate_port()
-    temp_conn.close()
-    return listen_port
+  
          
 class HubCommunication(object): 
     """
     Obtain hub's port and hub's ip along with file info hash form the metafile
     Establish a connection with the hub and obtain list of players
     """
-    def __init__(self, s, meta_file, player_id, listen_port):
+    def __init__(self, meta_file, player_id, listening_port, book, manager_queue):
         self.hub_port = meta_file.get_hub_port() # Get hub's port
         self.hub_ip = meta_file.get_hub_ip() # Get hub's ip
-        self.info_hash = meta_file.get_info_hash() # Info hash from the metafile
-        self.player_id = player_id # My player id
-        self.listen_port = listen_port # My listen port
-        self.s = s
-        self.hub_socket = s.create_connection(self.hub_ip, self.hub_port) # Create connection with the hub
         
-    def communicate_with_hub(self):    
-        hub_msg = message.HubNotifyMsg(self.info_hash, self.player_id, self.listen_port, 0x8000, 0x4000, 65255558, b'start').msg_encode()
-        hub_socket.sendall(hub_msg) # Send message to the hub [Message contains info hash, player id and listen_port of the player]        
-        while True:
-            print('Waiting for hub-connection')
-            hub, addr = s.accept()            
-            receive_message = self.hub_socket.recv(1024)
-            status, remain, hub_recv = message.ComMessage.msg_decode(hub_recv)
-            players = hub_recv.players
-            return(players)
-            
-    def hub_send(self, message):
-        self.hub_socket.sendall(message)
+        self.hub_port = 8001
+        self.hub_ip = 'localhost'     
+        
+        self.info_hash = meta_file.get_info_hash() # Info hash from the metafile
+        self.meta_file = meta_file
+        self.player_id = player_id # My player id
+        self.listening_port = listening_port # My listen port
+        self.book = book
+        self.manager_queue = manager_queue
+        
+        self.hub_socket = socket.create_connection((self.hub_ip, self.hub_port)) # Create connection with the hub
+        print('Start connection with hub')
+        self.hub_send().start()
+        self.hub_listening().start()
+        
+    def hub_send(self):         
+        def client():
+            state = STATE_INIT
+            while(True):
+                if state == STATE_INIT:
+                    file_size = self.meta_file.get_stuff_size()
+                    book_size = self.meta_file.get_book_length()
+                    
+                    msg = message.HubNotifyMsg(
+                                self.meta_file.get_info_hash(),
+                                self.player_id,
+                                self.listening_port,
+                                self.book.get_downloaded_stuff_size(),
+                                0,
+                                0,
+                                b'start').msg_encode()                      
+ 
+                    #print(msg)
+                    self.hub_socket.sendall(msg)
+                    print('Player ' + str(self.player_id) + ' sent notification to hub')
+                    state = STATE_UPDATE
+                elif state == STATE_UPDATE :
+                    #print('STATE_UPDATE')
+                    time.sleep(0.5)
+                    
+        t = Thread(target=client)
+        return t   
+        
+    def hub_listening(self):
+        def client():
+            remain = b''
+            while True:
+                msg = utils.read_socket_buffer(self.hub_socket)
+                if msg != b'':
+                    #print(msg)
+                    #print('got sth')
+                    full_msg = remain + msg
+                    status, remain, objMsg = message.ComMessage.msg_decode(full_msg)  
+                    if status == 0:
+                        print('Player ' + str(self.player_id) + ' receive answer from hub')                   
+                        if objMsg.get_message_type() == 'hub answer':
+                            list_players = objMsg.get_players()
+                            if len(list_players):
+                                #send list of players to the Player manager
+                                print(list_players)
+                                self.manager_queue.put((0,list_players))
+                            else:
+                                print('Player ' + str(self.player_id) + 'no player to connect to')
 
-class PlayerCommunication(object):
+        t = Thread(target=client)
+        return t  
+        
+        
+        
+class PlayerConnectionManager(object):
+    """ Manage the listening port and accept connection from other players
+    Initiate communication with other player from the hub list
     """
-    Handshake with every player in the list obtained from the hub.
-    Initiate two threads.
-    """
-    def __init__(self, s, listen_port, player_id, meta_file, hub_communication, max_connections): # Maximum number of connections
-        self.players = hub_communication.communicate_with_hub
-        self.listen_port = listen_port
+    def __init__(self, player_id, ip, listening_port, meta_file, book):
         self.player_id = player_id
-        self.info_hash = meta_file.get_info_hash
-        self.s = s
+        self.listening_port = listening_port
+        self.meta_file = meta_file
+        self.book = book
+        self.server_socket = socket.socket()
+        self.server_socket.bind((ip, listening_port))       
+        self.server_socket.listen()    
+        print('Player ' + str(self.player_id) + ' listening ' + str(ip) + ':' + str(listening_port))
+        self.q = queue.Queue()
+        self.players_info = {}
+        self.connect_players().start()
+        self.player_waiting_connection().start()       
+        
+    def get_player_manager_queue(self):
+        return self.q
+
+   
+    def player_waiting_connection(self):
+        def client():
+            print('Wainting for client connection')
+            while True:       
+                client_socket, addr = self.server_socket.accept()   
+                print("Received connection", client_socket)            
+                client = PlayerCommunicationServer(self.player_id, client_socket, addr, self.meta_file, 50)
+
+        t = Thread(target=client)
+        return t           
+ 
+    def is_existing_player(self, player):
+        key = player['player_id']
+        if key in self.players_info.keys() :
+            if self.players_info[key]['ip'] == player['ip'] and self.players_info[key]['port'] == player['port'] :
+                return True
+            else :
+                return False
+        else :
+            return False
+            
+            
+
+ 
+    def connect_players(self):
+        def queue_consumer():
+            msg_id, info = self.q.get()
+            print('Receive queue message to connect')
+            
+            if msg_id == 0:
+                list_player = info
+                if len(list_player):
+                    for player in list_player:
+                        print(player)
+                        if self.is_existing_player(player) == True:
+                            print('Existing player ' + str(player['player_id']))
+                            existing_player = self.players_info[player['player_id']]['player_com']
+                        else:
+                            print('Connect to player ' + str(player['player_id']))
+                            new_player = PlayerCommunicationClient(self.player_id, player['ip'], player['port'], player['player_id'], self.meta_file, 30)
+                        
+                            self.players_info[player['player_id']] = {'ip':player['ip'],'port':player['port'],'seeder':player['complete'],'player_com':new_player}
+                else:
+                    print('No players in the list')
+
+                print('Wainting for client connection')
+                while True:       
+                    client_socket, addr = self.server_socket.accept()   
+                    print("Received connection", client_socket)            
+                    client = PlayerCommunicationServer(self.player_id, client_socket, addr, self.meta_file, 50)
+
+        t = Thread(target=queue_consumer)
+        return t 
+    
+        
+class PlayerCommunicationClient(object):
+    """
+    Manage communication with one player server.
+    Initiate two threads to listen and send to the  player server.
+    """
+    def __init__(self, player_id, client_ip, client_listening_port, client_player_id, meta_file, max_connections): # Maximum number of connections
+       
+        self.client_listening_port = client_listening_port
+        self.client_player_id = client_player_id
+        self.client_ip = client_ip
+        self.player_id = player_id
+        self.meta_file = meta_file
+        self.info_hash = meta_file.get_info_hash()
+        self.q = queue.Queue() 
+        self.client_bitfield = None
+        self.client_socket = socket.create_connection((self.client_ip, self.client_listening_port))
+        self.handle_client_listen().start()
+        self.handle_client_send().start()
+        
+    def  handle_client_listen(self):    
+        def client():
+            remain = b''
+            while True:
+                msg = utils.read_socket_buffer(self.client_socket)
+                if msg != b'':
+                    print(msg)
+                    full_msg = remain + msg
+                    status, remain, objMsg = message.ComMessage.msg_decode(full_msg)  
+                    if status == 0:                                         
+                        if objMsg.get_message_type() == 'bitfield':
+                            self.client_bitfield = objMsg.get_bitfield()
+                            self.q.put((1, STATE_INTERESTED))
+
+        t = Thread(target=client)
+        return t          
+  
+        
+    def handle_client_send(self):
+        def client():
+            state = STATE_INIT
+            
+            while True:
+                if state == STATE_INIT:
+                    handshake_send = message.HandshakeMsg(self.player_id,self.meta_file.get_info_hash()).msg_encode()
+                    self.client_socket.sendall(handshake_send)
+                    state = STATE_WAIT_QUEUE
+                elif state == STATE_INTERESTED:
+                    pass
+                
+                elif state == STATE_WAIT_QUEUE:
+                    msg_id, info = self.q.get()
+                    if msg_id == 1 :
+                        state = info
+                        
+        t = Thread(target=client)
+        return t  
         
     def handshakes(self): # Handshake with others
         for player in self.players:
-            id = player[b'id']
-            port = player[b'port']
-            player = socket.create_connection((id, port))
-            handshake_send = message.HandshakeMsg(self.player_id,self.info_hash()).msg_encode()
+            player = socket.create_connection((self.client_ip, self.client_port))
+            handshake_send = message.HandshakeMsg(self.player_id,self.info_hash).msg_encode()
             socket.sendall(handshake_send)
             received_message = s.recv(1024)
             print(received_message)
@@ -192,3 +419,61 @@ class PlayerCommunication(object):
                     except:
                         print("Client disconnected", socket)
                         break       
+
+
+class PlayerCommunicationServer(object):
+    """
+    Manage communication with one player as client.
+    Initiate two threads to listen and send to the  player server.
+    """
+    def __init__(self, player_id, client_socket, addr, meta_file, max_connections): # Maximum number of connections
+        self.addr = addr
+        self.client_socket = client_socket
+        self.player_id = player_id
+        self.meta_file = meta_file
+        self.q = queue.Queue() 
+        self.client_bitfield = None
+        
+        self.handle_client_listen().start()
+        self.handle_client_send().start()
+        print('start listening to new client')
+        
+    def handle_client_listen(self):    
+        def client():
+            remain = b''
+            while True:
+                msg = utils.read_socket_buffer(self.client_socket)
+                if msg != b'':
+                    print(msg)
+                    full_msg = remain + msg
+                    status, remain, objMsg = message.ComMessage.msg_decode(full_msg)  
+                    if status == 0:                                         
+                        print(msg)
+
+        t = Thread(target=client)
+        return t          
+        
+        
+    def handle_client_send(self):
+        def client():
+            state = STATE_INIT            
+            while True:
+                time.sleep(0.1)
+
+        t = Thread(target=client)
+        return t          
+        
+        
+                       
+if __name__== "__main__":
+    root_dir = sys.argv[1]
+    meta_file_path = sys.argv[2]
+    player_id = sys.argv[3] 
+    print(player_id)
+    if player_id == 'None':
+        player_id = None
+    else :
+        player_id = player_id.encode()
+    print(player_id)    
+    #player_id = b'-RO0101-7ec7150dddf3'
+    main(root_dir, meta_file_path, player_id)
