@@ -13,7 +13,7 @@ class Books(object):
         bytes_size = int(math.ceil(metafile.get_book_number() / 8))
 
         self.bitfield = bytearray(bytes_size)
-
+        print(full_path)
         if os.path.isfile(full_path):
             with open(full_path, 'rb') as file:
                 for book_index in range(self.metafile.get_book_number()):
@@ -23,9 +23,13 @@ class Books(object):
                     if piece_hash == self.metafile.get_book_hash(book_index):
                         self.add_index(book_index)
         else:
+            print('Create file')
+            print(full_path)
             with open(full_path, "wb") as file:
                 file.truncate(self.metafile.get_stuff_size())
-
+                
+    def get_bitfield(self):
+        return self.bitfield
 
     def add_index(self, book_index):
         byte_index = book_index // 8
@@ -59,10 +63,13 @@ class Books(object):
         for i in range(self.metafile.get_book_number()):
             if self.have_book(i):
                 existing.append(i)
-
         return existing
 
-
+    def get_downloaded_stuff_size(self):
+        nb_book = len(self.existing_books())
+        return nb_book * self.metafile.get_book_length()
+    
+    
     def have_book(self, book_index):
         byte_index = book_index // 8
         bit_index = book_index % 8
