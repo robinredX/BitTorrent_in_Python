@@ -1,7 +1,10 @@
 import os
 import math
+import time
 from hashlib import sha1
+from threading import Thread
 from utils import Metainfo
+import queue
 
 
 class Books(object):
@@ -27,9 +30,14 @@ class Books(object):
             print(full_path)
             with open(full_path, "wb") as file:
                 file.truncate(self.metafile.get_stuff_size())
-                
+
+        self.rw_queue = queue.Queue()
+        self.read_write().start()
+
+
     def get_bitfield(self):
         return self.bitfield
+
 
     def add_index(self, book_index):
         byte_index = book_index // 8
@@ -65,6 +73,7 @@ class Books(object):
                 existing.append(i)
         return existing
 
+
     def get_downloaded_stuff_size(self):
         nb_book = len(self.existing_books())
         return nb_book * self.metafile.get_book_length()
@@ -78,7 +87,7 @@ class Books(object):
         return (self.bitfield[byte_index] >> shift_index) & 1
 
 
-    def read_book(self, book_index):
+    def _read_book(self, book_index):
         try:
             with open(self.full_path, 'rb') as file:
                 file.seek(book_index * self.metafile.get_book_length())
@@ -90,7 +99,7 @@ class Books(object):
             return None
 
 
-    def write_book(self, book_index, data):
+    def _write_book(self, book_index, data):
         try:
             with open(self.full_path, 'r+b') as file:
                 file.seek(book_index * self.metafile.get_book_length())
@@ -102,10 +111,33 @@ class Books(object):
             print('I/O Error in write book %d', book_index)
             return False
 
+
+    def queue_read(self, book_index, reply_queue):
+        self.rw_queue.put(('r', book_index, reply_queue))
+
+
+    def queue_write(self, book_index, data):
+        self.rw_queue.put(('w', book_index, data))
+
+
+    def read_write(self):
+        def queue_consumer():
+            while True:
+                op, index, third_param = self.rw_queue.get()
+                if op == 'r':
+                    third_param.put(self._read_book(index))
+                if op == 'w':
+                    self._write_book(index, third_param)
+                    print('write done')
+
+        t = Thread(target=queue_consumer)
+        return t
+
+
 if __name__ == '__main__':
     meta_file = Metainfo('file.libr')
-    new_file = Books("D:\\Work\\UJM\\Semester 2\\Computer Networking\\Project\\test2.mkv", meta_file)
-    new_file_2 = Books("D:\\Work\\UJM\\Semester 2\\Computer Networking\\Project\\test3.mkv", meta_file)
+    new_file = Books("D:\\Work\\UJM\\Semester 2\\Computer Networking\\Project\\test.txt", meta_file)
+    # new_file_2 = Books("D:\\Work\\UJM\\Semester 2\\Computer Networking\\Project\\test3.pdf", meta_file)
 
     # print('Bitfield: ' + str(new_file.bitfield))
     # print(new_file.existing_books())
@@ -123,10 +155,49 @@ if __name__ == '__main__':
     # print(new_file.existing_books())
     # print(new_file.missing_books())
 
-    print(new_file_2.bitfield)
+    # print(new_file_2.bitfield)
 
-    for i in range(meta_file.get_book_number()):
-        data = new_file.read_book(i)
-        new_file_2.write_book(i, data)
+    # for i in range(meta_file.get_book_number()):
+    #     data = new_file._read_book(i)
+    #     new_file_2._write_book(i, data)
 
-    print(new_file_2.bitfield)
+    # print(new_file_2.bitfield)
+
+    def read_thread():
+        def read():
+            read_queue = queue.Queue()
+            read_index = 0
+            while True:
+                print('---- Read Thread ----')
+                new_file.queue_read(read_index, read_queue)
+                print('Index: ', read_index)
+                print('Data: ')
+                print(read_queue.get())
+                time.sleep(0.5)
+        t = Thread(target=read)
+        return t
+
+
+    def write_thread():
+        def write():
+            write_index = 0
+            write_count = 0
+            while True:
+                print('---- Write Thread ----')
+                # print('Index: ', write_index)
+                new_file.queue_write(write_index, b'00000\r\b')
+
+                if write_index == new_file.metafile.get_book_number():
+                    write_index = 0
+                else:
+                    write_index += 1
+                time.sleep(0.2)
+                write_count += 1
+        t = Thread(target=write)
+        return t
+
+
+
+
+    read_thread().start()
+    write_thread().start()
