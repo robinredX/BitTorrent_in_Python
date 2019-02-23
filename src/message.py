@@ -79,6 +79,10 @@ class ComMessage(object):
         
         msg_length = (msg[0]<<8)+msg[1]
         if msg_length != (len(msg) - 2):
+            #print(msg[2])
+            #print('Message length : ' + str(msg_length))
+            #print('Received message length :' + str(len(msg)))
+
             #print(msg_length)
             #print(len(msg))
             status = -1   
@@ -88,16 +92,12 @@ class ComMessage(object):
             remain = msg[4:]
             if msg[2] == CODE['choke']:
                 return status, remain, ChokeMsg()
-            
             elif msg[2] == CODE['unchoke']:     
                 return status, remain, UnchokeMsg()
-            
             elif msg[2] == CODE['interested']:              
                 return status, remain, InterestedMsg()
-            
             elif msg[2] == CODE['not interested']:  
                 return status, remain, NotInterestedMsg()
-            
             elif msg[2] == CODE['have']: 
                 if msg_length != 5 :
                     raise ValueError("Message corrupted")
@@ -107,18 +107,16 @@ class ComMessage(object):
                         book_index = book_index<<8 | msg[3+i]
                     remain = msg[7:]                    
                 return status, remain, HaveMsg(book_index)
-            
             elif msg[2] == CODE['bitfield']: 
                 if msg_length < 2 :
                     raise ValueError("Message corrupted")            
                 else :
                     nb_bytes = msg_length - 1
-                    remain = msg[3:]
+                    remain = msg[3+nb_bytes:]
                     bitfield = bytearray(nb_bytes)
                     for i in range(0, nb_bytes):
-                        bitfield[i] = remain[i]                         
-                return  status, remain, BitfieldMsg(bitfield)
-            
+                        bitfield[i] = msg[3+i]                         
+                return  status, remain, BitfieldMsg(bitfield)               
             elif msg[2] == CODE['request']:  
                 if msg_length != 5 :
                     raise ValueError("Message corrupted")
@@ -128,7 +126,6 @@ class ComMessage(object):
                     for i in range(0,4):
                         book_index = book_index<<8 | msg[3+i]              
                 return  status, remain, RequestMsg(book_index)  
-            
             elif msg[2] == CODE['book']:  
                 book_index = 0
                 for i in range(0,4):
@@ -227,7 +224,7 @@ class BitfieldMsg(ComMessage):
     def __init__(self, bitfield):
         self.bitfield = bitfield  
         self.bitfield_length = len(self.bitfield)
- 
+        print('Bitfield length '+str(self.bitfield_length))
         super(BitfieldMsg, self).__init__('bitfield')
         self._length = 1 + self.bitfield_length
         
@@ -503,16 +500,16 @@ if __name__ == '__main__':
         {'player_id':utils.generate_player_id(), 'ip':'127.0.0.1', 'port':7897, 'complete':0}
     ]
     
-    msg = HubAnswerMsg(b'', b'', 100, 5, 1, 1, players ).msg_encode()
-    #print(msg)
-    status, remain, objMsg = ComMessage.msg_decode(msg)   
-    print(objMsg.get_error())
-    print(objMsg.get_warning())    
-    print(objMsg.get_interval())
-    print(objMsg.get_interval_min())
-    print(objMsg.get_complete())
-    print(objMsg.get_incomplete())
-    print(objMsg.get_players())
+    # msg = HubAnswerMsg(b'', b'', 100, 5, 1, 1, players ).msg_encode()
+    # #print(msg)
+    # status, remain, objMsg = ComMessage.msg_decode(msg)   
+    # print(objMsg.get_error())
+    # print(objMsg.get_warning())    
+    # print(objMsg.get_interval())
+    # print(objMsg.get_interval_min())
+    # print(objMsg.get_complete())
+    # print(objMsg.get_incomplete())
+    # print(objMsg.get_players())
 
     # invalid_players = [b'192.123.128.213/3366',b'148.253.125.32/6658',b'155.63.25.32/2356',b'126.35.98.36/8521']
     # msg = PlayerInvalidAddrMsg(invalid_players).msg_encode()
@@ -598,14 +595,6 @@ if __name__ == '__main__':
     # print(objMsg.get_message_type())    
     # print(objMsg.get_player_id())
     # print(objMsg.get_info_hash())    
-    
-    
-  
-
-    
-    
-  
-
     
     
   
