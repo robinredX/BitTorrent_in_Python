@@ -4,7 +4,6 @@ Utils module
 
 
 """
-import time
 from hashlib import sha1
 import os, random
 import math
@@ -12,6 +11,7 @@ import string
 from bencode import bencode, bdecode
 import os
 import binascii
+import time
 
 ROZALEAD_ID = b'RO0101'
 
@@ -49,7 +49,10 @@ class Metainfo(object):
 
     def get_info_hash(self):
         return self._info_hash
-    
+
+    def get_file_name(self):
+        return self._file_name.decode("utf-8")
+        
     def get_stuff_size(self):
         return self._stuff_length
         
@@ -67,9 +70,10 @@ class Metainfo(object):
             return self._hashes[book_index*20:(book_index+1)*20]
         else :
             return None
-        
+            
     def get_book_number(self):
-        return self._book_number    
+        return self._book_number
+    
    
 def generate_player_id():
     player_id = b'-' + ROZALEAD_ID + b'-' + binascii.b2a_hex(os.urandom(6))
@@ -80,6 +84,8 @@ def generate_player_id():
         
     return player_id
 
+    
+    
 def read_socket_buffer(f):
     res = b''
 
@@ -88,20 +94,22 @@ def read_socket_buffer(f):
     count = 0
     #print(dt1)
     while True:
-        dt2 = time.time_ns()       
-        b = f.recv(16)
-        
+        time.sleep(0.00000001)        
+        b = f.recv(32)
+        dt2 = time.time_ns()         
         if len(b) == 0:
             break
         res += b    
-        if len(res) > 16 :
-            break
+        if len(res) > 31 :
+            break            
             
-        if (dt2-dt1)>100:    
+            
+        if (dt2-dt1)>9:    
             break
-        time.sleep(0.000000001)    
-
-    return res 
-
+   
+    return res    
+    
+    
 if __name__ == '__main__':
     pass
+
