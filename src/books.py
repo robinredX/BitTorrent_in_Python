@@ -57,34 +57,40 @@ class Books(object):
         self.bitfield[byte_index] &= byte_mask
 
 
-    def missing_books(self):
+    def missing_books(self, bitfield):
         missing = []
         for i in range(self.metafile.get_book_number()):
-            if not self.have_book(i):
+            if not self.have_book(i, bitfield):
                 missing.append(i)
 
         return missing
 
 
-    def existing_books(self):
+    def existing_books(self, bitfield):
         existing = []
         for i in range(self.metafile.get_book_number()):
-            if self.have_book(i):
+            if self.have_book(i, bitfield):
                 existing.append(i)
         return existing
 
 
     def get_downloaded_stuff_size(self):
-        nb_book = len(self.existing_books())
+        nb_book = len(self.existing_books(self.bitfield))
         return nb_book * self.metafile.get_book_length()
     
     
-    def have_book(self, book_index):
+    def have_book(self, book_index, bitfield):
         byte_index = book_index // 8
         bit_index = book_index % 8
         shift_index = 8 - (bit_index + 1)
 
-        return (self.bitfield[byte_index] >> shift_index) & 1
+        return (bitfield[byte_index] >> shift_index) & 1
+
+
+    def match_bitfield(self, client_bitfield):
+        my_books = self.existing_books(self.bitfield)
+        client_books = self.existing_books(client_bitfield)
+        return [index for index in client_books if index not in my_books]
 
 
     def _read_book(self, book_index):
@@ -177,7 +183,6 @@ if __name__ == '__main__':
         t = Thread(target=read)
         return t
 
-
     def write_thread():
         def write():
             write_index = 0
@@ -196,8 +201,5 @@ if __name__ == '__main__':
         t = Thread(target=write)
         return t
 
-
-
-
-    read_thread().start()
-    write_thread().start()
+    # read_thread().start()
+    # write_thread().start()
