@@ -131,7 +131,7 @@ class Books(object):
             while True:
                 op, index, third_param = self.rw_queue.get()
                 if op == 'r':
-                    third_param.put(self._read_book(index))
+                    third_param.put((6, (index, self._read_book(index))))
                 if op == 'w':
                     self._write_book(index, third_param)
                     print('write done')
