@@ -16,7 +16,6 @@ class Books(object):
         bytes_size = int(math.ceil(metafile.get_book_number() / 8))
 
         self.bitfield = bytearray(bytes_size)
-        print(full_path)
         if os.path.isfile(full_path):
             with open(full_path, 'rb') as file:
                 for book_index in range(self.metafile.get_book_number()):
@@ -27,7 +26,6 @@ class Books(object):
                         self.add_index(book_index)
         else:
             print('Create file')
-            print(full_path)
             with open(full_path, "wb") as file:
                 file.truncate(self.metafile.get_stuff_size())
 
@@ -75,8 +73,18 @@ class Books(object):
 
 
     def get_downloaded_stuff_size(self):
-        nb_book = len(self.existing_books(self.bitfield))
-        return nb_book * self.metafile.get_book_length()
+        nb_existing_book = len(self.existing_books(self.bitfield))     
+        nb_book = self.metafile.get_book_number()
+        
+        if nb_existing_book == nb_book:
+            return self.metafile.get_stuff_size()
+        else:
+            last_book = nb_book - 1
+            if self.have_book(last_book, self.bitfield):
+                last_book_size = self.metafile.get_stuff_size()%self.metafile.get_book_length()
+                return (nb_existing_book - 1) * self.metafile.get_book_length() + last_book_size
+            else:
+                return (nb_existing_book * self.metafile.get_book_length())
     
     
     def have_book(self, book_index, bitfield):
@@ -118,22 +126,24 @@ class Books(object):
             return False
 
 
-    def queue_read(self, book_index, reply_queue):
-        self.rw_queue.put(('r', book_index, reply_queue))
+    def queue_read(self, book_index, reply):
+        self.rw_queue.put(('r', book_index, None, reply))
 
 
-    def queue_write(self, book_index, data):
-        self.rw_queue.put(('w', book_index, data))
+    def queue_write(self, book_index, data, reply):
+        self.rw_queue.put(('w', book_index, data, reply))
 
 
     def read_write(self):
         def queue_consumer():
             while True:
-                op, index, third_param = self.rw_queue.get()
+                op, index, third_param, reply = self.rw_queue.get()
+                reply_queue, reply_param = reply
                 if op == 'r':
-                    third_param.put((6, (index, self._read_book(index))))
+                    reply_queue.put((reply_param, (index, self._read_book(index))))
                 if op == 'w':
                     self._write_book(index, third_param)
+                    reply_queue.put((reply_param, index))
                     print('write done')
 
         t = Thread(target=queue_consumer)
