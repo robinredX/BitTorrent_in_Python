@@ -78,17 +78,18 @@ class ComMessage(object):
             return status, msg, None        
         
         msg_length = (msg[0]<<8)+msg[1]
-        if msg_length != (len(msg) - 2):
-            #print(msg[2])
-            #print('Message length : ' + str(msg_length))
-            #print('Received message length :' + str(len(msg)))
-
-            #print(msg_length)
-            #print(len(msg))
+        
+        
+        if len(msg) < (msg_length +2):
+            # the message is not complete, zqit for more bytes
             status = -1   
             return status, msg, None
+        elif len(msg) > (0x4000+0x5):
+            # the message is corrupted 
+            status = -2
+            return status, None, None        
         
-        elif msg_length != 0 :
+        if msg_length != 0 :
             remain = msg[4:]
             if msg[2] == CODE['choke']:
                 return status, remain, ChokeMsg()
@@ -169,7 +170,10 @@ class ComMessage(object):
                 obj = PlayerInvalidAddrMsg(info)
                 return status, remain, obj     
             else:
-                print("message.py : unknow type of message")
+                print("Unknow type of message. Message corrupted or malicious")
+                # the message is corrupted 
+                status = -2
+                return status, None, None     
                 
         else:
             remain = msg[2:]
