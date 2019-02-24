@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Created on Sun Feb 24 19:08:38 2019
+
+"""
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
 Created on Thu Feb 21 11:21:01 2019
 """
 
@@ -27,7 +34,8 @@ STATE_CONFIRM_WRITE = 4
 STATE_HUB_RECONNECT = 5
 STATE_HUB_DISCONNECTED = 6
 STATE_WAIT_QUEUE = 10
-
+STATE_CHOKE = 7
+STATE_NOT_INTERESTED = 8
 
 class PlayerQMsgEnum(Enum):
     QUEUE_MSG_CONNECT_PLAYERS = 0
@@ -41,7 +49,12 @@ class PlayerQMsgEnum(Enum):
     QUEUE_MSG_REGISTER_HUB_QUEUE = 8
     QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD = 9
     QUEUE_MSG_REINIT_HUB_CNX = 10
-    
+    QUEUE_MSG_CHOKE_SEND = 11
+    QUEUE_MSG_UNCHOKE_SEND = 12
+    QUEUE_MSG_CHOKE = 13
+    QUEUE_MSG_UNCHOKE = 14
+    QUEUE_CHECK_CHOKE = 15
+    QUEUE_STATE_CHANGE_UNCHOKE = 16
     
     
     
@@ -401,6 +414,28 @@ class PlayerConnectionManager(object):
                 nb_active += 1
         return nb_active
 
+    def make_choke(self): # TODO On what basis, send the choke and unchoke message - standby or active? (Clients from whom we have received bitfield but not made request)
+        nb_standby = 0
+        print(self.players_info)
+        for player_id in self.players_info.keys():            
+            if self.players_info[player_id]['status'] == 'STANDBY':
+                nb_standby += 1
+        q_msg_id, player = self.q.get()       
+        if q_msg_id == PlayerQMsgEnum.QUEUE_CHECK_CHOKE.value:
+            if nb_standby >= 50: # maximum number of connections = 50
+                self.players_info[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, player))
+
+    def make_unchoke(self): 
+        nb_standby = 0
+        print(self.players_info)
+        for player_id in self.players_info.keys():            
+            if self.players_info[player_id]['status'] == 'STANDBY':
+                nb_standby += 1
+        q_msg_id, player = self.q.get()       
+        if q_msg_id == PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND.value:
+            if nb_standby < 50: # maximum number of connections = 50
+                self.players_info[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_CHANGE_STATE_UNCHOKE, player))
+                
     def get_standby_player_number(self):
         nb_standby = 0
         for player_id in self.players_info.keys():
@@ -415,7 +450,16 @@ class PlayerConnectionManager(object):
                 if self.players_info[player_id]['book_request'] == book_index:
                     is_requested = False
         return is_requested        
-        
+
+    def make_interested(self): # Whether to send interested message or not
+        for player_id in self.players_info.keys():
+            if self.players_info[player_id]['status'] == 'STANDBY':
+                self.players_info[player_id]['missing_book'] = self.book.match_bitfield(self.players_info[player_id]['bitfield'])
+                if self.players_info[player_id]['missing_book'] != None:
+                    self.players_info[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_INTERESTED_SEND, player_id))
+                else:
+                    self.players_info[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED_SEND, player_id))
+                    
     def make_request(self):
         #print(self.players_info)
         nb_active_players = self.get_active_player_number()
@@ -520,7 +564,15 @@ class PlayerCommunicationClient(object):
                             print('Got bitfield message')
                             self.client_bitfield = objMsg.get_bitfield()
                             self.manager_queue.put((PlayerQMsgEnum.QUEUE_MSG_BITFIELD_REGISTER, (self.client_player_id, self.client_bitfield)))
-
+                        
+                        if objMsg.get_message_type() == 'choke': 
+                            print('choke message receievd')                        
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, (self.client_player_id)))
+                            
+                        if objMsg.get_message_type() == 'unchoke':
+                            print('unchoke message receievd')
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND, (self.client_player_id)))
+                            
                         if objMsg.get_message_type() == 'book':    
                             print('receive book message')
                             if objMsg.get_book_index() == self.requested_book:
@@ -543,26 +595,59 @@ class PlayerCommunicationClient(object):
     def handle_client_send(self):
         def client():
             state = STATE_INIT
-
+            self_choked = False
+            
             while True:
+                q_msg_id, info = self.q.get()
                 if state == STATE_INIT:
                     handshake_send = message.HandshakeMsg(self.player_id,self.meta_file.get_info_hash()).msg_encode()
                     self.client_socket.sendall(handshake_send)
                     print('Send handshake')
                     state = STATE_WAIT_QUEUE
 
-                elif state == STATE_INTERESTED:
-                    pass
-
-                elif state == STATE_REQUEST:
+                elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_INTERESTED_SEND.value and self_choked == False:
+                    interested_send = message.InterestedMsg().msg_encode()
+                    self.client_socket.sendall(interested_send)
+                    print('Send interested')
+                    state = STATE_INTERESTED
+                        
+                elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED_SEND.value and self_choked == False:
+                    not_interested_send = message.NotInterestedMsg().msg_encode()
+                    self.client_socket.sendall(not_interested_send)
+                    print('Send not interested')
+                    state = STATE_NOT_INTERESTED
+                
+                if q_msg_id == PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND.value: # If in queue to send choke message, send choke message
+                    choke_send = message.ChokeMsg().msg_encode()
+                    self.client_socket.sendall(choke_send)
+                    print('Send choke message')
+                    state = STATE_CHOKE
+                    self_choked = True
+                    
+                elif state == STATE_CHOKE:
+                    q_msg_id, info = self.q.get()
+                    if q_msg_id == PlayerQMsgEnum.QUEUE_CHANGE_STATE_UNCHOKE.value:
+                        print('A request from manager has been received to unchoke')
+                        unchoke_send = message.UnchokeMsg().msg_encode()
+                        self.client_socket.sendall(unchoke_send)
+                        print('Send unchoke message')
+                        state = STATE_WAIT_QUEUE
+                        self_choked = False
+                
+                elif state == STATE_INTERESTED and self_choked == False: # If interested, put in a state to send request if in queue for sending request
+                    q_msg_id, info = self.q.get()
+                    if q_msg_id == QUEUE_MSG_REQUEST :
+                        state = STATE_REQUEST
+                        self.requested_book = info
+                        
+                elif state == STATE_REQUEST and self_choked == False: # send request
                     print('A request from manager has been received')
-                    if self.requested_book is not None:
+                    if self.requested_book != None:
                         self.requested_book = self.requested_book
                         request_send = message.RequestMsg(self.requested_book).msg_encode()
                         self.client_socket.sendall(request_send)
-                        self.request_time = time.time()
-                        state = STATE_WAIT_QUEUE
-
+                        state = STATE_WAIT_QUEUE     
+                        
                 elif state == STATE_CONFIRM_WRITE:
                     self.manager_queue.put((PlayerQMsgEnum.QUEUE_MSG_BOOK_RECEIVED, (self.client_player_id, self.requested_book, self.reception_delay)))
                     print('Confirm to manager writing of book ' + str(self.requested_book))
@@ -714,16 +799,41 @@ class PlayerCommunicationServer(object):
                     full_msg = remain + msg
                     status, remain, objMsg = message.ComMessage.msg_decode(full_msg)  
                     if status == 0:                                         
-
-                        if objMsg.get_message_type() == 'handshake':
+                        if objMsg.get_message_type() == 'handshake': # Received handshake, put in queue to send bitfield
                             print('Receive handshake message')
                             self.client_player_id = objMsg.get_player_id()
                             self.q.put((PlayerQMsgEnum.QUEUE_MSG_BITFIELD,None))
-
-                        if objMsg.get_message_type() == 'request':
-                            print('Receive request message')
-                            book_index = objMsg.get_book_index()
-                            self.book.queue_read(book_index, (self.q, PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ))
+                            
+                        if objMsg.get_message_type() == 'interested': # Received interested message, put in queue of inetersted clients
+                            print('Receive interested message')
+                            self.client_player_id = objMsg.get_player_id()
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_INTERESTED,None))
+                        
+                        if objMsg.get_message_type() == 'not interested': # Received handshake, put in queue of not interested clients
+                            print('Receive not interested message')
+                            self.client_player_id = objMsg.get_player_id()
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED,None))
+                        # TODO Count connections to PlayerCommunicationServer to send choke and unchoke messages
+                        if objMsg.get_message_type() == 'choke': # Received choke message, put in queue to send choke message
+                            print('Receive choke message')
+                            self.client_player_id = objMsg.get_player_id()
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_CHOKE,self.client_player_id))
+                        
+                        if objMsg.get_message_type() == 'unchoke':
+                            print('Receive unchoke message')
+                            self.client_player_id = objMsg.get_player_id()
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE,self.client_player_id))
+                            
+                        if objMsg.get_message_type() == 'request': # Received a request message, get book index 
+                            q_msg_id, info = self.q.get()
+                            if q_msg_id == PlayerQMsgEnum.QUEUE_MSG_INTERESTED.value: # Check if the client was interested before processing his request
+                                print('Receive request message')
+                                book_index = objMsg.get_book_index()
+                                payload = self.book.queue_read(book_index, self.q)
+                                if payload != None:
+                                    self.q.put((PlayerQMsgEnum.QUEUE_MSG_PAYLOAD, (book_index,payload))) # Put in queue to send book
+                            elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED.value:
+                                print('Book request received but the client was not interested') # TODO How to deal with this? Can this happen?                                
                             
                                                     
         t = Thread(target=client)
@@ -733,20 +843,33 @@ class PlayerCommunicationServer(object):
     def handle_client_send(self):
         def client():
             state = STATE_INIT            
+            player_choked = False # Whether other player (client) is choked or not
+            
             while True:
-                q_msg_id, info = self.q.get()       
-                if q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_BITFIELD.value:
+                q_msg_id, info = self.q.get() # Receive queue for sending bitfield (after handshake) and send bitfield    
+                if q_msg_id == PlayerQMsgEnum.QUEUE_MSG_BITFIELD.value and player_choked == False:
                     bitfield_send = message.BitfieldMsg(self.book.get_bitfield()).msg_encode()
                     print('Send bitfield')
                     self.client_socket.sendall(bitfield_send)                
-            
-                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ.value :
+                
+                elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_CHOKE.value: # Send choke message
+                    client_id = info
+                    choke_send = message.ChokeMsg(client_id).msg_encode()
+                    self.client_socket.sendall(choke_send)
+                    player_choked = True
+                    
+                elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_UNCHOKE.value : # Send unchoke message
+                    client_id = info
+                    unchoke_send = message.UnchokeMsg(client_id).msg_encode()
+                    self.client_socket.sendall(unchoke_send)
+                    player_choked = False
+                    
+                elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ.value and player_choked == False : # Receive queue for sending books and send book
                     print('Received payload from book')
-                    book_index, payload = info
-                                      
+                    book_index, payload = info                                      
                     book_send = message.BookMsg(book_index, payload).msg_encode()
                     self.client_socket.sendall(book_send)   
-
+                    
         t = Thread(target=client)
         return t          
         
