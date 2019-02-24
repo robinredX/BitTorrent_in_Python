@@ -12,8 +12,16 @@ from bencode import bencode, bdecode
 import os
 import binascii
 import time
-
+from enum import Enum
 ROZALEAD_ID = b'RO0101'
+
+
+class LibQMsgEnum(Enum):
+    MSGQ_ADD_PLAYER_LIST = 0
+    MSGQ_REMOVE_PLAYER_LIST = 1
+    
+class HubQMsgEnum(Enum):
+    MSGQ_SEND_HUB_ANSWER = 0    
 
 
 class Metainfo(object):
@@ -112,4 +120,3 @@ def read_socket_buffer(f):
     
 if __name__ == '__main__':
     pass
-
