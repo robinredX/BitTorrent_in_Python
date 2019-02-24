@@ -84,7 +84,7 @@ class ComMessage(object):
             # the message is not complete, zqit for more bytes
             status = -1   
             return status, msg, None
-        elif len(msg) > (0x4000+0x5):
+        elif len(msg) > (0x4000+0x7):
             # the message is corrupted 
             status = -2
             return status, None, None        
