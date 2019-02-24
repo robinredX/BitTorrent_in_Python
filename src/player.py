@@ -571,7 +571,7 @@ class PlayerCommunicationClient(object):
                             
                         if objMsg.get_message_type() == 'unchoke':
                             print('unchoke message receievd')
-                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND, (self.client_player_id)))
+                            self.manager_queue.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND, (self.client_player_id)))
                             
                         if objMsg.get_message_type() == 'book':    
                             print('receive book message')
