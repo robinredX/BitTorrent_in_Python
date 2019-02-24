@@ -10,24 +10,125 @@ import os
 from netutils import read_line
 import numpy as np
 import time
+from enum import Enum
 
 import message
 import utils
+from utils import LibQMsgEnum, HubQMsgEnum
+
+
 
 class HubPlayer(object):
-    def __init__(self, address):
-            self.timed_out_players = []
-            self.hub_socket = socket.socket()
-            self.hub_socket.bind(address)
-            self.hub_socket.listen()
-            print("Waiting for connection")
+    def __init__(self, socket, addr, lib_q):
+        self.socket = socket
+        self.addr = addr
+        self.lib_q = lib_q
+        self.file_hash = None
+        self.player_id = None
+        self.last_cnx_time = time.time()
+        #the queue is used to send instructions to the handle_client_send thread
+        self.q = queue.Queue()
+        t1 = self.handle_client_listen()
+        t1.daemon = True
+        t1.start()
+        t2 = self.handle_client_send()
+        t2.daemon = True
+        t2.start() 
+        
             #time-out defaults to 10 seconds for testing purposes,
             #and only checks the IP
             #this makes more sense than playerID, since the latter is self-generated
             #and makes more sense than checking the port also, since we could be 
             #spamming the hub from multiple client instances on the same machine
             #TODO make sure it matches the hub answer interval
+            
+    # handle_client returns a Thread that can be started, i.e., use: handle_client(.......).start()
+    def handle_client_listen(self):
+        """ listen to the client player 
+        """
+        def handle():
+            #print("Create thread listen")
+            remain = b''
+            while True:
+                try:
+                    msg = utils.read_socket_buffer(self.socket)
+                except socket.error as msg:  
+                    print('Communication with player '+ str(self.player_id) + ' has been interupted. ' + msg)
+                    break      
+                    
+                if msg != b'':
+                    self.last_cnx_time = time.time()
+                    #print(msg)
+                    full_msg = remain + msg
+                    status, remain, objMsg = message.ComMessage.msg_decode(full_msg)        
 
+                    if status == 0:
+                        msg_type = objMsg.get_message_type()      
+                        # Receive hub notify message    
+                        if msg_type == 'hub notify':
+                            if self.player_id == None:
+                               self.player_id  =  objMsg.get_player_id()        
+                               
+                            print('Player '+ str(self.player_id) + ' Hub notify received from ' + str(self.addr))
+                            len_msg = len(full_msg) - len(remain)
+                            
+                            self.lib_q.put((LibQMsgEnum.MSGQ_ADD_PLAYER_LIST, (self.q, HubQMsgEnum.MSGQ_SEND_HUB_ANSWER,self.socket, self.addr , full_msg[0:len_msg])))
+                        
+                        # Receive invalid player message
+                        elif msg_type == 'player invalid address':
+                            invalid_players = objMsg.get_invalid_players()
+                            print('Receive invalid player list' + str(invalid_players[b'list_player']))
+                            list_dead_players=[]                            
+                            for player_cnx in invalid_players[b'list_player']:                                
+                                ip, port = player_cnx.split(b'/',1)
+                                try:
+                                    self.hub_socket = socket.create_connection((ip.decode("utf-8"),int(port)))
+                                except socket.error as msg: 
+                                    print('Fail attempt to connect to ' + str((ip.decode("utf-8"),int(port))))
+                                    print(msg)
+                                    list_dead_players.append((ip.decode("utf-8"),int(port)))
+                                    
+                            if len(list_dead_players):
+                                self.lib_q.put((LibQMsgEnum.MSGQ_REMOVE_PLAYER_LIST, list_dead_players))
+                            
+                        else:
+                            print('Player '+ str(self.player_id) + 'Received invalid message type')
+
+              
+            print('Exit listening')
+
+        t = Thread(target=handle)
+        return t
+
+
+    def handle_client_send(self):
+        """ Manage the sending of messages to the client player
+            Request to send a message are sent via a queue
+        """
+        def handle():
+            #print("Create thread send")       
+            while True :
+                #Waiting to receive message from client queue
+                qmsg_id, info = self.q.get()
+                print('Client receive message from lib')
+                if qmsg_id.value == HubQMsgEnum.MSGQ_SEND_HUB_ANSWER.value :
+                    socket, addr, msg = info 
+                    try:
+                        self.socket.sendall(msg)
+                        print('Player ' + str(self.player_id) + ' Message sent to player')
+                    except socket.error as msg:
+                        print('The connection is not established anymore')
+        t = Thread(target=handle)
+        return t             
+        
+        
+        
+        
+        
+        
+        
+        
+        
     def listen(self, q):
         def handle():
             while True:
@@ -77,6 +178,7 @@ class HubPlayer(object):
                             # print("ACTION: closing socket...", socket)
                             # socket.close()
                             print("REPORT: printing dictionary...", library.lib)
+                            
                         elif message_type == 'player invalid address':
                             # check reported players
                             print("ACTION: checking reported players...")
