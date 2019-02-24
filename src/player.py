@@ -13,27 +13,40 @@ import utils
 import random
 # import pickle 
 import time
-import netifaces as ni
+#import netifaces as ni
 from books import Books
 from hashlib import sha1
+from enum import Enum
 
 
-
-STATE_INIT=0
-STATE_UPDATE=1
-STATE_INTERESTED=2
+STATE_INIT = 0
+STATE_UPDATE = 1
+STATE_INTERESTED = 2
 STATE_REQUEST = 3
+STATE_CONFIRM_WRITE = 4
+STATE_HUB_RECONNECT = 5
+STATE_HUB_DISCONNECTED = 6
+STATE_WAIT_QUEUE = 10
 
-STATE_WAIT_QUEUE=10
 
-QUEUE_MSG_HANSHAKE = 0
-QUEUE_MSG_INTERESTED = 1
-QUEUE_MSG_BITFIELD = 2
-QUEUE_MSG_BITFIELD_REGISTER = 3
-QUEUE_MSG_REQUEST = 4
-QUEUE_MSG_BOOK_RECEIVED = 5
-QUEUE_MSG_PAYLOAD = 6
-
+class PlayerQMsgEnum(Enum):
+    QUEUE_MSG_CONNECT_PLAYERS = 0
+    QUEUE_MSG_INTERESTED = 1
+    QUEUE_MSG_BITFIELD = 2
+    QUEUE_MSG_BITFIELD_REGISTER = 3
+    QUEUE_MSG_REQUEST = 4
+    QUEUE_MSG_BOOK_RECEIVED = 5
+    QUEUE_MSG_PAYLOAD_READ = 6
+    QUEUE_MSG_PAYLOAD_WRITE = 7
+    QUEUE_MSG_REGISTER_HUB_QUEUE = 8
+    QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD = 9
+    QUEUE_MSG_REINIT_HUB_CNX = 10
+    
+    
+    
+    
+    
+    
 def main(root_dir, meta_file_path, player_id):
     """
      Read .libr file, get Meta Info and Generate player_id for out player (client).
@@ -42,16 +55,15 @@ def main(root_dir, meta_file_path, player_id):
     """
     meta_file = utils.Metainfo(meta_file_path)
     book_list = []
-    if player_id == None :
+    if player_id is None :
         print('Create player id')
         player_id = utils.generate_player_id() 
-    print(meta_file.get_file_name())    
-        
+    print(meta_file.get_file_name())
         
     print(player_id.decode("utf-8"))
-    if os.path.exists(root_dir) == True :
+    if os.path.exists(root_dir):
         player_dir = root_dir+'\\'+player_id.decode("utf-8")
-        if os.path.exists(player_dir) == False:
+        if not os.path.exists(player_dir):
             os.mkdir(player_dir)            
         list_file = os.listdir(player_dir)
         
@@ -65,18 +77,15 @@ def main(root_dir, meta_file_path, player_id):
     print(book_list[0].get_bitfield())
     
     # get the ip address
-    interface_id = ni.gateways()['default'][2][1]
+    #interface_id = ni.gateways()['default'][2][1]
     #print(ni.interfaces())
-    ip = ni.ifaddresses(interface_id)[2][0]['addr'] 
+    #ip = ni.ifaddresses(interface_id)[2][0]['addr']
 
     ip = 'localhost'
-    listening_port = random.randint(7000,8000)
+    listening_port = random.randint(7000, 8000)
     count = 0    
     
-   
-    player_cnx = PlayerConnectionManager(player_id, ip, listening_port, meta_file, book_list[0])       
-   
-    while True :    
+    while True:
         try:      
             player_cnx = PlayerConnectionManager(player_id, ip, listening_port, meta_file, book_list[0])
             player_manager_queue = player_cnx.get_player_manager_queue()
@@ -90,19 +99,20 @@ def main(root_dir, meta_file_path, player_id):
                 break    
     
     count = 0
+    
     while True :
         try :
             HubCommunication(meta_file, player_id, listening_port, book_list[0], player_manager_queue)
             print('Player ' + str(player_id) + ' connected to hub')
             break
-        except:
-            
+        except:            
             count += 1
             print('Connection to hub attemp ' + str(count) + ' fail.')
             #time.sleep(5)
             if count > 5:
                 print('Can not connect to the hub. Terminate.')
                 sys.exit(-1)
+                break
     
     # hub_connect_send = Thread(handle = HubCommunication.communicate_with_hub(s, meta_file, player_id, listen_port), args(q,))
     # hub_connect_send.setDaemon = True
@@ -132,12 +142,24 @@ class HubCommunication(object):
         self.player_id = player_id # My player id
         self.listening_port = listening_port # My listen port
         self.book = book
-        self.manager_queue = manager_queue
+        
+        self.manager_q = manager_queue
+        self.hub_q = queue.Queue()
+        self.hub_interval = 0
+        self.hub_min_interval = 0
+        self.hub_cnx_status = 'NOT_CONNECTED'
         
         self.hub_socket = socket.create_connection((self.hub_ip, self.hub_port)) # Create connection with the hub
         print('Start connection with hub')
         self.hub_send().start()
         self.hub_listening().start()
+        self.register_hub_queue_with_player_manager()
+        
+    def get_hub_queue(self):
+        return self.hub_queue    
+        
+    def register_hub_queue_with_player_manager(self):
+        self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_REGISTER_HUB_QUEUE, self.hub_q))
         
     def hub_send(self):         
         def client():
@@ -146,23 +168,61 @@ class HubCommunication(object):
                 if state == STATE_INIT:
                     file_size = self.meta_file.get_stuff_size()
                     book_size = self.meta_file.get_book_length()
+                    left = self.meta_file.get_stuff_size() - self.book.get_downloaded_stuff_size()
+                    print(self.meta_file.get_stuff_size())
+                    print(self.book.get_downloaded_stuff_size())
+                    print(left)                   
                     
+                    print('Left to download ' + str(left))
                     msg = message.HubNotifyMsg(
                                 self.meta_file.get_info_hash(),
                                 self.player_id,
                                 self.listening_port,
                                 self.book.get_downloaded_stuff_size(),
                                 0,
-                                0,
+                                left,
                                 b'start').msg_encode()                      
  
-                    #print(msg)
-                    self.hub_socket.sendall(msg)
-                    print('Player ' + str(self.player_id) + ' sent notification to hub')
-                    state = STATE_UPDATE
-                elif state == STATE_UPDATE :
-                    #print('STATE_UPDATE')
-                    time.sleep(0.5)
+                    try:
+                        self.hub_socket.sendall(msg)
+                        print('Player ' + str(self.player_id) + ' sent notification to hub')
+                        state = STATE_WAIT_QUEUE
+                    except:
+                        state = STATE_HUB_RECONNECT
+                        print('The hub is disconnected')
+                        self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_REINIT_HUB_CNX, STATE_INIT))                       
+                    
+                elif state == STATE_HUB_RECONNECT :
+                    try:
+                        self.hub_socket = socket.create_connection((self.hub_ip, self.hub_port)) # Create connection with the hub
+                        self.hub_listening().start()
+                        state = STATE_WAIT_QUEUE                        
+                    except:
+                        print('Cannot connect to hub')
+                        
+
+                    
+                elif state == STATE_WAIT_QUEUE :
+                    qmsg_id, info = self.hub_q.get()
+                    # a list of dead players is received
+                    if qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD.value:
+                        list_players = []
+                        print('Dead player ' + str(info))
+                        for player in info:
+                           list_players.append(player['ip']+b'/'+str(player['port']).encode())
+                        print(list_players)   
+                        if len(list_players):
+                            msg = message.PlayerInvalidAddrMsg(list_players).msg_encode()
+                            try:
+                                self.hub_socket.sendall(msg)
+                            except:    
+                                state = STATE_HUB_RECONNECT
+                                print('The hub is disconnected')
+                                #resend info in the queue to deal with after hub reconnection
+                                self.hub_q.put((qmsg_id, info))
+                                
+                    elif qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_REINIT_HUB_CNX.value:
+                        state = info
                     
         t = Thread(target=client)
         return t   
@@ -171,7 +231,12 @@ class HubCommunication(object):
         def client():
             remain = b''
             while True:
-                msg = utils.read_socket_buffer(self.hub_socket)
+                try:
+                    msg = utils.read_socket_buffer(self.hub_socket)
+                except:
+                    print('Hub is disconnected')
+                    self.hub_cnx_status = 'NOT_CONNECTED'
+                    break
                 if msg != b'':
                     #print(msg)
                     #print('got sth')
@@ -180,11 +245,17 @@ class HubCommunication(object):
                     if status == 0:
                         print('Player ' + str(self.player_id) + ' receive answer from hub')                   
                         if objMsg.get_message_type() == 'hub answer':
+                            err_msg = objMsg.get_error()
+                            warn_msg = objMsg.get_warning()
+                            self.hub_interval = objMsg.get_interval()
+                            self.hub_min_interval = objMsg.get_interval_min()
+                            nb_seeder = objMsg.get_complete()                    
+                            nb_leecher = objMsg.get_incomplete()                        
                             list_players = objMsg.get_players()
                             if len(list_players):
                                 #send list of players to the Player manager
-                                print(list_players)
-                                self.manager_queue.put((0,list_players))
+                                print('List_player' + str(list_players))
+                                self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_CONNECT_PLAYERS,list_players))
                             else:
                                 print('Player ' + str(self.player_id) + 'no player to connect to')
 
@@ -207,18 +278,20 @@ class PlayerConnectionManager(object):
         self.server_socket.listen()    
         print('Player ' + str(self.player_id) + ' listening ' + str(ip) + ':' + str(listening_port))
         self.q = queue.Queue()
-
+        self.hub_q = None
         self.players_info = {}
         self.connect_players().start()
-        self.player_waiting_connection().start()       
+        self.player_waiting_connection().start()
+        self.manage_player_request().start()
         
     def get_player_manager_queue(self):
         return self.q
 
-   
     def player_waiting_connection(self):
+        """ Waiting for new client to connect to the listening port
+        """
         def client():
-            print('Wainting for client connection')
+            print('Waiting for client connection')
             while True:       
                 client_socket, addr = self.server_socket.accept()   
                 print("Received connection", client_socket)            
@@ -226,126 +299,186 @@ class PlayerConnectionManager(object):
 
         t = Thread(target=client)
         return t           
- 
+
+    def manage_player_request(self):
+        """ Waiting for new client to connect to the listening port
+        """
+        def handle():
+            while True:
+                self.make_request()
+                time.sleep(5)
+
+        t = Thread(target=handle)
+        return t
+
     def is_existing_player(self, player):
         key = player['player_id']
-        if key in self.players_info.keys() :
-            if self.players_info[key]['ip'] == player['ip'] and self.players_info[key]['port'] == player['port'] :
+        if key in self.players_info.keys():
+            if self.players_info[key]['ip'] == player['ip'] and self.players_info[key]['port'] == player['port']:
                 return True
-            else :
+            else:
                 return False
-        else :
+        else:
             return False
-            
-            
 
- 
     def connect_players(self):
         def queue_consumer():
             while True:
                 q_msg_id, info = self.q.get()
                 
-                if q_msg_id == 0:
+                if q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_REGISTER_HUB_QUEUE.value:
+                    print('Hub has registered its queue')
+                    self.hub_q = info
+                                
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_CONNECT_PLAYERS.value:
                     print('Manager receive queue message to connect players' + str(q_msg_id))               
                     list_player = info
                     if len(list_player):
+                        dead_player_list = []
                         for player in list_player:
-                            if self.is_existing_player(player) == True:
+                            if self.is_existing_player(player):
                                 print('Existing player ' + str(player['player_id']))
                                 existing_player = self.players_info[player['player_id']]['player_com']
                             else:
-                                print('Connect to player ' + str(player['player_id']))
-                                self.players_info[player['player_id']] = {'bitfield':None, 'status':'NOTCONNECTED','book_request':None}
-                                new_player = PlayerCommunicationClient(self.player_id, 
-                                                                       player['ip'],
-                                                                       player['port'], player['player_id'], self.meta_file, self.q, self.book, 30)
-                            
-                                self.players_info[player['player_id']]['ip'] = player['ip']
-                                self.players_info[player['player_id']]['port'] = player['port']
-                                self.players_info[player['player_id']]['seeder'] = player['complete']
-                                self.players_info[player['player_id']]['player_com'] = new_player
+                                print('Try to connect to player ' + str(player['player_id']))
+                                self.players_info[player['player_id']] = {'bitfield':None, 'status':'NOT_CONNECTED','book_request':None, 'delay':[]}
+
+                                try:
+                                    new_player = PlayerCommunicationClient(self.player_id,
+                                                                           player['ip'],
+                                                                           player['port'], player['player_id'],
+                                                                           self.meta_file,
+                                                                           self.q,
+                                                                           self.book,
+                                                                           30)
+
+                                    self.players_info[player['player_id']]['ip'] = player['ip']
+                                    self.players_info[player['player_id']]['port'] = player['port']
+                                    self.players_info[player['player_id']]['seeder'] = player['complete']
+                                    self.players_info[player['player_id']]['player_com'] = new_player
+                                except:
+                                    print('Player cannot connect to player server ' + str(player['player_id']))
+                                    dead_player_list.append(player)
+                                    
+                        if len(dead_player_list):                       
+                            if self.hub_q is not None:
+                                self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD, dead_player_list))
+                                    
+                                    
                     else:
                         print('No players in the list')
 
 
-                elif q_msg_id == QUEUE_MSG_BITFIELD_REGISTER:
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_BITFIELD_REGISTER.value:
                     print('Manager received bitfield to register')
                     client_player_id, bitfield = info
                     #print(client_player_id)
                     #print(self.players_info)
                     self.players_info[client_player_id]['bitfield'] = bitfield
-                    if self.players_info[client_player_id]['status'] != 'ACTIVE':
+                    if self.players_info[client_player_id]['status'] == 'NOT_CONNECTED':
                         self.players_info[client_player_id]['status'] = 'STANDBY'
-                        self.make_request()
-                        
-                elif q_msg_id == QUEUE_MSG_BOOK_RECEIVED:  
-                    client_player_id, book_index = info
 
-            
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_BOOK_RECEIVED.value:
+                    client_player_id, book_index, delay = info
+                    print('Manager receive confirmation of book ' + str(book_index) + ' from player ' + str(client_player_id))
+
+
+                    if client_player_id in self.players_info.keys():
+                        if self.players_info[client_player_id]['book_request'] == book_index:
+                            self.players_info[client_player_id]['delay'].append(delay)
+                            if len(self.players_info[client_player_id]['delay']) > 10:
+                                self.players_info[client_player_id]['delay'].pop(0)
+                            self.players_info[client_player_id]['book_request'] = None
+                            self.players_info[client_player_id]['status'] = 'STANDBY'
+
         t = Thread(target=queue_consumer)
         return t 
     
-    
     def get_active_player_number(self):
         nb_active = 0
-        print(self.players_info)
         for player_id in self.players_info.keys():            
             if self.players_info[player_id]['status'] == 'ACTIVE':
                 nb_active += 1
         return nb_active
-        
+
+    def get_standby_player_number(self):
+        nb_standby = 0
+        for player_id in self.players_info.keys():
+            if self.players_info[player_id]['status'] == 'STANDBY':
+                nb_standby += 1
+        return nb_standby
+
     def check_book_not_requested(self, book_index):
         is_requested = True
         for player_id in self.players_info.keys():            
             if self.players_info[player_id]['status'] == 'ACTIVE':
-               if self.players_info[player_id]['book_requested'] == book_index:
-                   is_requested = False 
-               
+                if self.players_info[player_id]['book_request'] == book_index:
+                    is_requested = False
         return is_requested        
         
     def make_request(self):
-        if self.get_active_player_number()<4:
-        
-            nb_books = self.meta_file.get_book_number()
+        #print(self.players_info)
+        nb_active_players = self.get_active_player_number()
+        #print('There are '+ str(nb_active_players) + ' active players')
+        loop = 0
+        while nb_active_players < 4 and self.get_standby_player_number():
+            #print('Loop ' + str(loop))
             book_count = {}
             for player_id in self.players_info.keys():
                 if self.players_info[player_id]['status'] == 'STANDBY':
                     self.players_info[player_id]['missing_book'] = self.book.match_bitfield(self.players_info[player_id]['bitfield'])
-                    
-
+            
+            #get the count of book presence amoung the different players
             for player_id in self.players_info.keys():
-                for book_no in self.players_info[player_id]['missing_book']:    
-                    if book_no in book_count.keys():
-                        book_count[book_no] += 1
-                    else:
-                        book_count[book_no] = 1
+                if self.players_info[player_id]['status'] == 'STANDBY':
+                    for book_no in self.players_info[player_id]['missing_book']:    
+                        if book_no in book_count.keys():
+                            book_count[book_no] += 1
+                        else:
+                            book_count[book_no] = 1
+            
+            #get the list of book_index by increasing frequence number among the other players
             freq_key=[]            
             for key, value in sorted(book_count.items(), key=lambda item: (item[1], item[0])):
                 freq_key.append(key)          
             
-            freq_key.reverse()
+            
+            #freq_key.reverse()
 
             if len(freq_key):
                 for book_index in freq_key:
-                    print('Book index: ' + str(book_index)) 
+
                     list_book_owner = []
                     if self.check_book_not_requested(book_index) == True:
-                        print('the book is availbale')
+                        #print('the book is available')
                         for player_id in self.players_info.keys():            
                             if self.players_info[player_id]['status'] == 'STANDBY':
-                                if book_index in self.players_info[player_id]['missing_book']:                       
+                                if book_index in self.players_info[player_id]['missing_book']:
                                     list_book_owner.append(player_id)
                         if len(list_book_owner):         
                             break
-                     
-            if len(list_book_owner):                    
-                picked_player_id = random.choice(list_book_owner)               
-                print('Manager send request to player')    
-                self.players_info[picked_player_id]['player_com'].get_client_queue().put((QUEUE_MSG_REQUEST,book_index))
-                self.players_info[picked_player_id]['status'] = 'ACTIVE'
-                self.players_info[picked_player_id]['request_no'] = book_index
-        
-        
+                            
+                if len(list_book_owner):
+                    print('Book index: ' + str(book_index) + ' has players')
+                    picked_player_id = random.choice(list_book_owner)               
+                    print('Manager send request to player')    
+                    self.players_info[picked_player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_REQUEST, book_index))
+                    self.players_info[picked_player_id]['book_request'] = book_index
+                    self.players_info[picked_player_id]['status'] = 'ACTIVE'
+                else:
+                    #print('No more players available')
+                    break
+            else :
+                # There are no book to fetch
+                #print('No book to fetch')
+                break
+                
+            nb_active_players = self.get_active_player_number()
+            print('There are '+ str(nb_active_players) + ' active players')
+            loop += 1
+        #print('Exit make request')
+
+
 class PlayerCommunicationClient(object):
     """
     Manage communication with one player server.
@@ -360,7 +493,6 @@ class PlayerCommunicationClient(object):
         self.meta_file = meta_file
         self.book = book
         self.manager_queue = manager_queue
-        print(self.manager_queue)
         self.info_hash = meta_file.get_info_hash()
         self.q = queue.Queue() 
         self.client_bitfield = None
@@ -368,11 +500,13 @@ class PlayerCommunicationClient(object):
         self.handle_client_listen().start()
         self.handle_client_send().start()
         self.requested_book = None
+        self.request_time = 0
+        self.reception_delay = 0
         
     def get_client_queue(self):
         return self.q 
         
-    def  handle_client_listen(self):    
+    def handle_client_listen(self):
         def client():
             remain = b''
             while True:
@@ -385,18 +519,18 @@ class PlayerCommunicationClient(object):
                         if objMsg.get_message_type() == 'bitfield':
                             print('Got bitfield message')
                             self.client_bitfield = objMsg.get_bitfield()
-                            print(self.manager_queue)
-                            self.manager_queue.put((QUEUE_MSG_BITFIELD_REGISTER, (self.client_player_id,self.client_bitfield)))
+                            self.manager_queue.put((PlayerQMsgEnum.QUEUE_MSG_BITFIELD_REGISTER, (self.client_player_id, self.client_bitfield)))
 
                         if objMsg.get_message_type() == 'book':    
                             print('receive book message')
                             if objMsg.get_book_index() == self.requested_book:
-                                payload  = objMsg.get_payload()
+                                payload = objMsg.get_payload()
                                 if self.meta_file.get_book_hash(self.requested_book) == sha1(payload).digest():
+                                    self.reception_delay = time.time()-self.request_time
+                                    print('Book received in ', self.reception_delay)
                                     print('Book signature is correct')
-                                    self.book.queue_write(self.requested_book, payload)
-                                    self.manager_queue.put((QUEUE_MSG_BOOK_RECEIVED, (self.player_id, self.requested_book) ))
-                                    self.requested_book = None
+                                    self.book.queue_write(self.requested_book, payload, (self.q, PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_WRITE))
+
                                 else:
                                     print('Book signature mismatch')
                             else:
@@ -416,24 +550,35 @@ class PlayerCommunicationClient(object):
                     self.client_socket.sendall(handshake_send)
                     print('Send handshake')
                     state = STATE_WAIT_QUEUE
+
                 elif state == STATE_INTERESTED:
-                    pass                    
+                    pass
+
                 elif state == STATE_REQUEST:
                     print('A request from manager has been received')
-                    if self.requested_book != None:
+                    if self.requested_book is not None:
                         self.requested_book = self.requested_book
                         request_send = message.RequestMsg(self.requested_book).msg_encode()
                         self.client_socket.sendall(request_send)
-                        state = STATE_WAIT_QUEUE    
-                
+                        self.request_time = time.time()
+                        state = STATE_WAIT_QUEUE
+
+                elif state == STATE_CONFIRM_WRITE:
+                    self.manager_queue.put((PlayerQMsgEnum.QUEUE_MSG_BOOK_RECEIVED, (self.client_player_id, self.requested_book, self.reception_delay)))
+                    print('Confirm to manager writing of book ' + str(self.requested_book))
+                    self.request_time = 0
+                    self.reception_delay = 0
+                    self.requested_book = None
+                    state = STATE_WAIT_QUEUE
+
                 elif state == STATE_WAIT_QUEUE:
                     q_msg_id, info = self.q.get()
-                    if q_msg_id == 1 :
-                        state = info
-                    elif q_msg_id == QUEUE_MSG_REQUEST :
+
+                    if q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_REQUEST.value:
                         state = STATE_REQUEST
                         self.requested_book = info
-                        
+                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_WRITE.value:
+                        state = STATE_CONFIRM_WRITE
                         
         t = Thread(target=client)
         return t  
@@ -573,12 +718,12 @@ class PlayerCommunicationServer(object):
                         if objMsg.get_message_type() == 'handshake':
                             print('Receive handshake message')
                             self.client_player_id = objMsg.get_player_id()
-                            self.q.put((QUEUE_MSG_BITFIELD,None))
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_BITFIELD,None))
 
                         if objMsg.get_message_type() == 'request':
                             print('Receive request message')
                             book_index = objMsg.get_book_index()
-                            self.book.queue_read(book_index, self.q)
+                            self.book.queue_read(book_index, (self.q, PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ))
                             
                                                     
         t = Thread(target=client)
@@ -590,12 +735,12 @@ class PlayerCommunicationServer(object):
             state = STATE_INIT            
             while True:
                 q_msg_id, info = self.q.get()       
-                if q_msg_id == QUEUE_MSG_BITFIELD:
+                if q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_BITFIELD.value:
                     bitfield_send = message.BitfieldMsg(self.book.get_bitfield()).msg_encode()
                     print('Send bitfield')
                     self.client_socket.sendall(bitfield_send)                
             
-                elif q_msg_id == QUEUE_MSG_PAYLOAD :
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ.value :
                     print('Received payload from book')
                     book_index, payload = info
                                       
@@ -611,11 +756,14 @@ if __name__== "__main__":
     root_dir = sys.argv[1]
     meta_file_path = sys.argv[2]
     player_id = sys.argv[3] 
-    print(player_id)
+    print(root_dir)
+    print(meta_file_path)
+    print(player_id)    
+    
     if player_id == 'None':
         player_id = None
     else :
         player_id = player_id.encode()
-    print(player_id)    
+  
     #player_id = b'-RO0101-7ec7150dddf3'
     main(root_dir, meta_file_path, player_id)
