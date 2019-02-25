@@ -53,7 +53,6 @@ class PlayerQMsgEnum(Enum):
     QUEUE_MSG_UNCHOKE_SEND = 12
     QUEUE_MSG_CHOKE = 13
     QUEUE_MSG_UNCHOKE = 14
-    QUEUE_CHECK_CHOKE = 15
     QUEUE_STATE_CHANGE_UNCHOKE = 16
     
     
@@ -414,16 +413,16 @@ class PlayerConnectionManager(object):
                 nb_active += 1
         return nb_active
 
-    def make_choke(self): # TODO On what basis, send the choke and unchoke message - standby or active? (Clients from whom we have received bitfield but not made request)
-        nb_standby = 0
-        print(self.players_info)
-        for player_id in self.players_info.keys():            
-            if self.players_info[player_id]['status'] == 'STANDBY':
-                nb_standby += 1
-        q_msg_id, player = self.q.get()       
-        if q_msg_id == PlayerQMsgEnum.QUEUE_CHECK_CHOKE.value:
-            if nb_standby >= 50: # maximum number of connections = 50
-                self.players_info[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, player))
+    #def make_choke(self): # TODO On what basis, send the choke and unchoke message - standby or active? (Clients from whom we have received bitfield but not made request)
+     #   nb_standby = 0
+      #  print(self.players_info)
+       # for player_id in self.players_info.keys():            
+        #    if self.players_info[player_id]['status'] == 'STANDBY':
+         #       nb_standby += 1
+        #q_msg_id, player = self.q.get()       
+        #if q_msg_id == PlayerQMsgEnum.QUEUE_CHECK_CHOKE.value:
+        #if nb_standby >= 50: # maximum number of connections = 50
+         #   self.players_info[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, player))
 
     def make_unchoke(self): 
         nb_standby = 0
