@@ -94,11 +94,14 @@ class Books(object):
 
         return (bitfield[byte_index] >> shift_index) & 1
 
-
+        
     def match_bitfield(self, client_bitfield):
-        my_books = self.existing_books(self.bitfield)
-        client_books = self.existing_books(client_bitfield)
-        return [index for index in client_books if index not in my_books]
+        if client_bitfield != None :
+            my_books = self.existing_books(self.bitfield)
+            client_books = self.existing_books(client_bitfield)
+            return [index for index in client_books if index not in my_books]
+        else:
+            return None
 
 
     def _read_book(self, book_index):
@@ -142,8 +145,9 @@ class Books(object):
                 if op == 'r':
                     reply_queue.put((reply_param, (index, self._read_book(index))))
                 if op == 'w':
+                    data_length = len(third_param)
                     self._write_book(index, third_param)
-                    reply_queue.put((reply_param, index))
+                    reply_queue.put((reply_param, (index, data_length)))
                     print('write done')
 
         t = Thread(target=queue_consumer)
