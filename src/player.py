@@ -18,6 +18,17 @@ import time
 from books import Books
 from hashlib import sha1
 from enum import Enum
+from hubcom import HubCommunication
+import logging
+
+
+
+FORMAT='%(asctime)s - %(levelname)s - %(message)s'
+logging.basicConfig(format=FORMAT)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+MAX_SERVER_CONNECTION_NUMBER = 2
 
 
 STATE_INIT = 0
@@ -37,7 +48,7 @@ STATE_PLAYER_KILLED = 11
 
 class PlayerQMsgEnum(Enum):
     QUEUE_MSG_CONNECT_PLAYERS = 0
-
+    QUEUE_MSG_ADD_CLIENT = 1
     QUEUE_MSG_BITFIELD = 2
     QUEUE_MSG_BITFIELD_REGISTER = 3
     QUEUE_MSG_REQUEST = 4
@@ -48,27 +59,42 @@ class PlayerQMsgEnum(Enum):
     QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD = 9
     QUEUE_MSG_REINIT_HUB_CNX = 10
     QUEUE_MSG_KILL_CONNECTION = 11    
-    QUEUE_MSG_CHOKE_SEND = 12
-    QUEUE_MSG_UNCHOKE_SEND = 13
-    QUEUE_MSG_CHOKE = 14
-    QUEUE_MSG_UNCHOKE = 15
-    QUEUE_CHANGE_STATE_UNCHOKE = 16
-    QUEUE_MSG_SEND_HUB_NOTIFY = 17   
-    QUEUE_MSG_KILL_CNX_PLAYER_SERVER = 18
-    QUEUE_MSG_KILL_CNX_PLAYER_CLIENT = 19
-    QUEUE_MSG_INTERESTED_SEND = 20
-    QUEUE_MSG_NOT_INTERESTED_SEND = 21
+
+    QUEUE_MSG_CHOKE_CLIENT = 13
+    QUEUE_MSG_CHOKE_SERVER = 14
+    QUEUE_MSG_UNCHOKE_CLIENT = 15    
+    QUEUE_MSG_UNCHOKE_SERVER = 16
+
+    QUEUE_MSG_SEND_HUB_NOTIFY = 18  
+    QUEUE_MSG_KILL_CNX_PLAYER_SERVER = 19
+    QUEUE_MSG_KILL_CNX_PLAYER_CLIENT = 20
+    QUEUE_MSG_INTERESTED = 21
+    QUEUE_MSG_NOT_INTERESTED = 22
+    QUEUE_MSG_HAVE = 23
+    QUEUE_MSG_CLIENT_UPLOAD = 24
+    QUEUE_MSG_HANDSHAKE_SERVER = 25 
+    QUEUE_MSG_MANAGE_SERVER_CLIENT = 26
     
+PLAYER_STATUS_CONNECTED = 1
+PLAYER_STATUS_ACTIVE = 2
+PLAYER_STATUS_INTERESTED = 4
+PLAYER_STATUS_CHOKE = 8    
     
+PLAYER_ROLE_SERVER_ONLY = 0
+PLAYER_ROLE_CLIENT_ONLY = 1   
+PLAYER_ROLE_BOTH = 2   
     
-    
-    
-def main(root_dir, meta_file_path, player_id):
+def main(root_dir, meta_file_path, player_id, role):
     """
      Read .libr file, get Meta Info and Generate player_id for out player (client).
      Contact Hub and get player list.
      Initiate connection with players and handshake.
     """
+    if role==PLAYER_ROLE_SERVER_ONLY:
+        print('ROLE is SERVER only')
+    elif role == PLAYER_ROLE_CLIENT_ONLY:
+        print('ROLE is CLIENT only')       
+    
     meta_file = utils.Metainfo(meta_file_path)
     book_list = []
     if player_id is None :
@@ -90,7 +116,7 @@ def main(root_dir, meta_file_path, player_id):
             print('Create new stuff')
             book_list.append(Books(player_dir+'\\'+meta_file.get_file_name(), meta_file))
             
-    print(book_list[0].get_bitfield())
+    #print(book_list[0].get_bitfield())
     
     # get the ip address
     #interface_id = ni.gateways()['default'][2][1]
@@ -106,7 +132,7 @@ def main(root_dir, meta_file_path, player_id):
     #Start the player manager
     while True:
         try:      
-            player_cnx = PlayerConnectionManager(player_id, ip, listening_port, meta_file, book_list[0])
+            player_cnx = PlayerConnectionManager(player_id, ip, listening_port, meta_file, book_list[0], role)
             player_manager_queue = player_cnx.get_player_manager_queue()
             break
         except:
@@ -138,199 +164,7 @@ def main(root_dir, meta_file_path, player_id):
     
   
          
-class HubCommunication(object): 
-    """
-    Obtain hub's port and hub's ip along with file info hash form the metafile
-    Establish a connection with the hub and obtain list of players
-    """
-    def __init__(self, meta_file, player_id, listening_port, book, manager_queue):
-        self.hub_port = meta_file.get_hub_port() # Get hub's port
-        self.hub_ip = meta_file.get_hub_ip() # Get hub's ip
-        
-        self.hub_port = 8001
-        self.hub_ip = 'localhost'     
-        
-        self.info_hash = meta_file.get_info_hash() # Info hash from the metafile
-        self.meta_file = meta_file
-        self.player_id = player_id # My player id
-        self.listening_port = listening_port # My listen port
-        self.book = book
-        
-        self.manager_q = manager_queue
-        self.hub_q = queue.Queue()
-        self.hub_interval = None
-        self.hub_min_interval = 0
-        self.hub_cnx_status = 'NOT_CONNECTED'
-        self.hub_last_x_time = 0
-        
-        # the connection error is managed outside
-        self.hub_socket = socket.create_connection((self.hub_ip, self.hub_port)) # Create connection with the hub
-        print('Start connection with hub')
-        self.hub_cnx_status = 'CONNECTED'
-        self.t1 = self.hub_send()
-        self.t1.daemon = True
-        self.t1.start()
-        self.t2 = self.hub_listening()
-        self.t2.daemon = True
-        self.t2.start()        
-        self.register_hub_queue_with_player_manager()
-        
-    def get_hub_queue(self):
-        return self.hub_queue    
-        
-    def register_hub_queue_with_player_manager(self):
-        self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_REGISTER_HUB_QUEUE, self.hub_q))
-        
-    def send_delayed_hub_notify_queue_msg(self):    
-        """ function called by thread Timer to delay message 
-        """
-        self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_SEND_HUB_NOTIFY, STATE_SEND_HUB_NOTIFY))   
-
-    def send_delayed_reconnect_hub_notify_queue_msg(self): 
-        """ function called by thread Timer to delay message 
-        """
-        self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_REINIT_HUB_CNX, STATE_HUB_RECONNECT)) 
-        
-    def hub_send(self):         
-        def client():
-            state = STATE_SEND_HUB_NOTIFY
-            while(True):
-                if state == STATE_SEND_HUB_NOTIFY:
-                    file_size = self.meta_file.get_stuff_size()
-                    book_size = self.meta_file.get_book_length()
-                    left = self.meta_file.get_stuff_size() - self.book.get_downloaded_stuff_size()
-                   
-                    print('Left to download ' + str(left))
-                    msg = message.HubNotifyMsg(
-                                self.meta_file.get_info_hash(),
-                                self.player_id,
-                                self.listening_port,
-                                self.book.get_downloaded_stuff_size(),
-                                0,
-                                left,
-                                b'start').msg_encode()                      
- 
-                    try:
-                        self.hub_socket.sendall(msg)
-                        self.hub_last_x_time = time.time()
-                        print('Player ' + str(self.player_id) + ' sent notification to hub')
-                        if self.hub_interval is not None:               
-                            Timer(self.hub_interval, self.send_delayed_hub_notify_queue_msg).start()
-
-                    except:
-
-                        print('The hub is disconnected')
-                        Timer(20, self.send_delayed_reconnect_hub_notify_queue_msg).start()
-                        #self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_REINIT_HUB_CNX, STATE_HUB_RECONNECT))                       
-                    state = STATE_WAIT_QUEUE    
-
-                    
-                elif state == STATE_HUB_RECONNECT:
-                    try:
-                        try:
-                            self.hub_socket.recv(1)
-                        except socket.error as msg:
-                            #The socket is dead and not bee restarted    
-                            print('Attempt to reconnect to the hub')
-                            self.hub_socket = socket.create_connection((self.hub_ip, self.hub_port)) # Create connection with the hub
-                            self.hub_cnx_status = 'CONNECTED'
-                            if not self.t2.isAlive():
-                                self.t2 = self.hub_listening()
-                                self.t2.daemon = True
-                                self.t2.start()
-                            state = STATE_SEND_HUB_NOTIFY                        
-                    except:
-                        print('Cannot connect to hub')
-                        
-                    
-                elif state == STATE_WAIT_QUEUE:                
-                    try:
-                        qmsg_id, info = self.hub_q.get(True, self.hub_interval)
-                     
-                        # a list of dead players is received
-                        if qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD.value:
-                            list_players = []
-                            print('Dead player ' + str(info))
-                            for player in info:
-                               list_players.append(player['ip']+b'/'+str(player['port']).encode())
-                            if len(list_players):
-                                msg = message.PlayerInvalidAddrMsg(list_players).msg_encode()
-                                try:
-                                    self.hub_socket.sendall(msg)
-                                    self.hub_last_x_time = time.time()
-                                except:    
-                                    print('The hub is disconnected')
-                                    state = STATE_HUB_RECONNECT                                    
-                                    #resend info in the queue to deal with after hub reconnection
-                                    self.hub_q.put((qmsg_id, info))
-                                    
-                        elif qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_REINIT_HUB_CNX.value:
-                            print('HubCom receive a queue message to reconnect to hub')
-                            state = info                                     
-                    
-                        elif qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_SEND_HUB_NOTIFY.value:
-                            print('HubCom receive a queue message to notify hub')
-                            state = info
-                    
-                    except queue.Empty: 
-                        #print('Hub no msg in queue')    
-                        pass                       
-                    
-        t = Thread(target=client)
-        return t   
-        
-    def hub_listening(self):
-        def client():
-            remain = b''
-            while True:
-                try:
-                    msg = utils.read_socket_buffer(self.hub_socket)
-                except:
-                    print('Hub is disconnected')
-                    #self.hub_q.put((QUEUE_MSG_REINIT_HUB_CNX, STATE_HUB_RECONNECT))
-                    Timer(20, self.send_delayed_reconnect_hub_notify_queue_msg).start()
-                    self.hub_cnx_status = 'NOT_CONNECTED'
-                    break
-                if msg != b'':
-                    #print(msg)
-                    full_msg = remain + msg
-                    status, remain, objMsg = message.ComMessage.msg_decode(full_msg)  
-                    
-                    if status == 0:
-                        print('Player ' + str(self.player_id) + ' receive answer from hub')        
-                        
-                        # Hub has sent a new list of players
-                        if objMsg.get_message_type() == 'hub answer':
-                            send_timer = False
-                            if self.hub_interval is None :
-                                send_timer = True             
-                            err_msg = objMsg.get_error()
-                            warn_msg = objMsg.get_warning()
-                            self.hub_interval = objMsg.get_interval()
-                            self.hub_min_interval = objMsg.get_interval_min()
-                            nb_seeder = objMsg.get_complete()                    
-                            nb_leecher = objMsg.get_incomplete()                        
-                            list_players = objMsg.get_players()
-                            if send_timer == True:
-                                Timer(self.hub_interval, self.send_delayed_hub_notify_queue_msg, ()).start()
-                            if len(list_players):
-                                #send list of players to the Player manager
-                                print('List_player' + str(list_players))
-                                self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_CONNECT_PLAYERS,list_players))
-                            else:
-                                print('Player ' + str(self.player_id) + 'no player to connect to')
-                elif state == -2 :
-                    print('The message is corrupted')
-                    #self.hub_q.put((QUEUE_MSG_REINIT_HUB_CNX, STATE_HUB_RECONNECT))
-                    Timer(20, self.send_delayed_reconnect_hub_notify_queue_msg).start()
-                    self.hub_socket.close()
-                    self.hub_cnx_status = 'NOT_CONNECTED'
-                    break
-                
-                
-        t = Thread(target=client)
-        return t  
-        
+      
         
         
 class PlayerConnectionManager(object):
@@ -338,28 +172,39 @@ class PlayerConnectionManager(object):
     Initiate communication with other player from the hub list
     Manage the book request for the players
     """
-    def __init__(self, player_id, ip, listening_port, meta_file, book):
+    def __init__(self, player_id, ip, listening_port, meta_file, book, role):
         self.player_id = player_id
         self.listening_port = listening_port
         self.meta_file = meta_file
         self.book = book
+        self.role = role   
+        
         self.server_socket = socket.socket()
         self.server_socket.bind((ip, listening_port))       
         self.server_socket.listen()    
         print('Player ' + str(self.player_id) + ' listening ' + str(ip) + ':' + str(listening_port))
         self.q = queue.Queue()
         self.hub_q = None
+        self.extra_log = 'M - %s'
         
         #The client player that have connected to this player server
         self.server_player_list = []
+        #The client player that have connected to this player server and send an hancheck
+        self.server_player_dict = {}
         #The player server this player has connected to
         self.client_player_dict = {}
-        t1 = self.connect_players()
+        
+        self.server_thread_timer = None        
+        self.server_manager_time = time.time()
+
+        
+        t1 = self.consume_manager_queue()
         t1.daemon = True
         t1.start()
-        t2 = self.player_waiting_connection()
-        t2.daemon = True
-        t2.start()
+        if self.role != PLAYER_ROLE_CLIENT_ONLY:        
+            t2 = self.player_waiting_connection()
+            t2.daemon = True
+            t2.start()
         t3 = self.manage_player_request()
         t3.daemon = True
         t3.start()
@@ -371,17 +216,20 @@ class PlayerConnectionManager(object):
         """ Waiting for new client to connect to the listening port
         """
         def client():
-            print('Waiting for client connection')
+            logger.debug('Waiting for client connection')
             while True:       
                 client_socket, addr = self.server_socket.accept()   
-                print("Received connection", client_socket)            
-                self.server_player_list.append(PlayerCommunicationServer(self.player_id,
-                                                                         self.book,
-                                                                         client_socket,
-                                                                         addr,
-                                                                         self.meta_file,
-                                                                         self.q,
-                                                                         50))
+                logger.debug("Received connection", client_socket)            
+                new_player = PlayerCommunicationServer(self.player_id,
+                                                       self.book,
+                                                       client_socket,
+                                                       addr,
+                                                       self.meta_file,
+                                                       self.q,
+                                                       50)
+                logger.info(self.extra_log, '##### Connect new server player ' + str(addr))                                       
+                self.q.put((PlayerQMsgEnum.QUEUE_MSG_ADD_CLIENT,new_player))    
+                                                                       
         t = Thread(target=client)
         return t           
     
@@ -399,17 +247,23 @@ class PlayerConnectionManager(object):
         """
         def handle():
             while True:
-                self.make_request()
+                if self.role != PLAYER_ROLE_SERVER_ONLY:
+                    
+                
+                    self.make_request()
                 self.check_client_players_alive()
-                time.sleep(5)
+                time.sleep(10)
+
 
         t = Thread(target=handle)
         return t
 
     def is_existing_player(self, player):
-        key = player['player_id']
-        if key in self.client_player_dict.keys():
-            if self.client_player_dict[key]['ip'] == player['ip'] and self.client_player_dict[key]['port'] == player['port']:
+        player_id  = player['player_id']
+        logger.debug(self.extra_log, 'Check existing player ' + str(player))
+        if player_id in self.client_player_dict.keys():
+            
+            if self.client_player_dict[player_id]['ip'] == player['ip'] and self.client_player_dict[player_id]['port'] == player['port']:
                 return True
             else:
                 return False
@@ -425,138 +279,247 @@ class PlayerConnectionManager(object):
                 return False
         return False
             
-
-    def connect_players(self):
+    def send_server_client_manage_message(self):
+        self.q.put((PlayerQMsgEnum.QUEUE_MSG_MANAGE_SERVER_CLIENT, None))
+        
+    def add_book_index(self, bitfield, book_index):
+        """ add book index to the client bitfield
+        """
+        byte_index = book_index // 8
+        bit_index = book_index % 8
+        shift_index = 8 - (bit_index + 1)
+        byte_mask = 1 << shift_index       
+        bitfield[byte_index] |= byte_mask 
+        
+        return bitfield
+        
+    def consume_manager_queue(self):
         def queue_consumer():
             while True:
                 q_msg_id, info = self.q.get()
                 
                 if q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_REGISTER_HUB_QUEUE.value:
-                    print('Hub has registered its queue')
+                    #logger.debug('Hub has registered its queue')
                     self.hub_q = info
                                 
                 elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_CONNECT_PLAYERS.value:
-                    print('Manager receive queue message to connect players' + str(q_msg_id))               
-                    list_player = info
-                    if len(list_player):
-                        dead_player_list = []
-                        for player in list_player:
-                            if self.is_existing_player(player):
-                                # This player is already connected and running
-                                print('Existing player ' + str(player['player_id']))
-                                existing_player = self.client_player_dict[player['player_id']]['player_com']
-                            elif self.check_is_player_fraud(player):
-                                print('Mismatch between player_id and listening port : reject player ' + str(player))
-                            else:
-                                print('Try to connect to player ' + str(player['player_id']))
-                                self.client_player_dict[player['player_id']] = {'bitfield':None, 'status':'NOT_CONNECTED','book_request':None, 'delay':[]}
+                    if self.role != PLAYER_ROLE_SERVER_ONLY:
+                        list_player = info
+                        logger.debug(self.extra_log, 'Manager receive queue message to connect players ' + str(list_player))           
+                        
+                        if len(list_player):
+                            dead_player_list = []
+                            for player in list_player:
+                                if self.is_existing_player(player):
+                                    # This player is already connected and running
+                                    logger.debug(self.extra_log, 'C- Existing player ' + str(player['player_id']))
+                                    existing_player = self.client_player_dict[player['player_id']]['player_obj']
+                                elif self.check_is_player_fraud(player):
+                                    logger.error(self.extra_log, 'Mismatch between player_id and listening port : reject player ' + str(player))
+                                else:                                    
+                                    self.client_player_dict[player['player_id']] = {'bitfield':None, 'status':PLAYER_STATUS_CHOKE, 'book_request':None, 'downloaded':0, 'delay':[]}
 
-                                try:
-                                    new_player = PlayerCommunicationClient(self.player_id,
-                                                                           player['ip'],
-                                                                           player['port'], player['player_id'],
-                                                                           self.meta_file,
-                                                                           self.q,
-                                                                           self.book,
-                                                                           30)
+                                    try:
+                                        new_player = PlayerCommunicationClient(self.player_id,
+                                                                               player['ip'],
+                                                                               player['port'], player['player_id'],
+                                                                               self.meta_file,
+                                                                               self.q,
+                                                                               self.book,
+                                                                               30)
+                                        logger.info(self.extra_log, '#### Connected to new client player ' + str(player['player_id']))
+                                        self.client_player_dict[player['player_id']]['ip'] = player['ip']
+                                        self.client_player_dict[player['player_id']]['port'] = player['port']
+                                        self.client_player_dict[player['player_id']]['seeder'] = player['complete']
+                                        self.client_player_dict[player['player_id']]['player_obj'] = new_player
+                                        
+                                    except:
+                                        logger.warning(self.extra_log, 'Player cannot connect to player server ' + str(player['player_id']))
+                                        dead_player_list.append(player)
+                                        
+                            if len(dead_player_list):                       
+                                if self.hub_q is not None:
+                                    self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD, dead_player_list))
+                                        
+                                        
+                        else:
+                            print('No players in the list')
 
-                                    self.client_player_dict[player['player_id']]['ip'] = player['ip']
-                                    self.client_player_dict[player['player_id']]['port'] = player['port']
-                                    self.client_player_dict[player['player_id']]['seeder'] = player['complete']
-                                    self.client_player_dict[player['player_id']]['player_com'] = new_player
-                                except:
-                                    print('Player cannot connect to player server ' + str(player['player_id']))
-                                    dead_player_list.append(player)
-                                    
-                        if len(dead_player_list):                       
-                            if self.hub_q is not None:
-                                self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD, dead_player_list))
-                                    
-                                    
-                    else:
-                        print('No players in the list')
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_ADD_CLIENT.value:                      
+                    client = info
+                    logger.debug('Manager add client ' + str(client))
+                    self.server_player_list.append(client) 
+                    #print(self.server_player_list)
 
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_HANDSHAKE_SERVER.value:
+                    # the server has received a handshake from a client player 
+                    client, client_player_id = info
+                    remove_player = None
+                    # remove the server client from list to dict
+                    for player in self.server_player_list :
+                        if player == client:                            
+                            if client_player_id not in self.server_player_dict.keys():
+                                self.server_player_dict[client_player_id] = {   'player_obj':client,
+                                                                                'status':PLAYER_STATUS_CHOKE|PLAYER_STATUS_CONNECTED,
+                                                                                'uploaded':0,
+                                                                                'time_choke_change':time.time()}                                
+                                remove_player = player
+                                break
+                    if remove_player != None:
+                        self.server_player_list.remove(remove_player)
 
+                        
+                    if self.get_server_not_choke_client_number() < MAX_SERVER_CONNECTION_NUMBER and self.get_server_choke_client_number():
+                        #print(self.server_thread_timer)
+                        # try to unchoke client immediately
+                        if self.server_thread_timer != None:                            
+                            if self.server_thread_timer.is_alive() :
+                                self.server_thread_timer.cancel()
+                                logger.debug(self.extra_log, 'Cancel server manger timer ' + str(self.server_thread_timer.is_alive()))
+                                self.q((QUEUE_MSG_MANAGE_SERVER_CLIENT, None))
+                            #otherwise the message is in queue
+                        else :
+                            logger.info(self.extra_log, 'Request manager check to unchoke player t=' + str(time.time()))
+                            self.send_server_client_manage_message()
+
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_CLIENT_UPLOAD.value:
+                    client_player_id, data_length = info
+                    if client_player_id in self.server_player_dict.keys():
+                        self.server_player_dict[client_player_id]['uploaded'] += data_length
+
+                    
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_INTERESTED.value:
+                    # the server has received a message that a client is interested
+                    player_id = info
+                    if player_id in self.server_player_dict.keys():
+                        self.server_player_dict[player_id]['status'] |= PLAYER_STATUS_INTERESTED
+      
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED.value:                         
+                    # the server has received a message that a client is not interested
+                    player_id = info
+                    if player_id in self.server_player_dict.keys():
+                        self.server_player_dict[player_id]['status'] &= ~PLAYER_STATUS_INTERESTED
+
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_CHOKE_CLIENT.value:
+                    client_player_id = info
+                    if client_player_id in self.client_player_dict.keys():
+                        self.client_player_dict[client_player_id]['status'] |= PLAYER_STATUS_CHOKE  
+                        logger.debug(self.extra_log, 'Client ' + str(client_player_id) + ' status : ' + str(bin(self.client_player_dict[client_player_id]['status'])))                           
+                            
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_CLIENT.value:  
+                    client_player_id = info
+                    if client_player_id in self.client_player_dict.keys():
+                        self.client_player_dict[client_player_id]['status'] &= ~PLAYER_STATUS_CHOKE   
+                        logger.info(self.extra_log, 'Client ' + str(client_player_id) + ' status : ' + str(bin(self.client_player_dict[client_player_id]['status'])))   
+
+                        
                 elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_BITFIELD_REGISTER.value:
-                    print('Manager received bitfield to register')
+                    #logger.debug('Manager received bitfield to register')
                     client_player_id, bitfield = info
                     #print(client_player_id)
-                    #print(self.client_player_dict)
+                    
                     self.client_player_dict[client_player_id]['bitfield'] = bitfield
-                    if self.client_player_dict[client_player_id]['status'] == 'NOT_CONNECTED':
-                        self.client_player_dict[client_player_id]['status'] = 'STANDBY'
+                    if not self.client_player_dict[client_player_id]['status'] & PLAYER_STATUS_CONNECTED :                    
+                        self.client_player_dict[client_player_id]['status'] |= PLAYER_STATUS_CONNECTED
+                        self.client_player_dict[client_player_id]['status'] &= ~PLAYER_STATUS_ACTIVE
+                        #print(self.client_player_dict)
+                    self.make_interested(client_player_id)
+                    
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_HAVE.value:
+                    client_player_id, book_index = info
+                    logger.debug(self.extra_log, 'Update bitfield from player ' + str(client_player_id))
+                    
+                    if client_player_id in self.client_player_dict.keys():
+                        self.client_player_dict[client_player_id]['bitfield'] = self.add_book_index(self.client_player_dict[client_player_id]['bitfield'], book_index)
+                        # the bitfield of the client player is update need to signify if we are interested
+                        self.make_interested(client_player_id)
+                    else:
+                        print('Player manager cannot find the player ' + str(client_player_id) + ' to update bitfield')                          
 
+                        
+    
                 elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_BOOK_RECEIVED.value:
-                    client_player_id, book_index, delay = info
+                    client_player_id, book_index, data_length, delay = info
                     print('Manager receive confirmation of book ' + str(book_index) + ' from player ' + str(client_player_id))
-
-
                     if client_player_id in self.client_player_dict.keys():
                         if self.client_player_dict[client_player_id]['book_request'] == book_index:
+                            self.client_player_dict[client_player_id]['downloaded'] += data_length
+                            #logger.info(self.extra_log, 'Downloaded size is ' + str(self.client_player_dict[client_player_id]['downloaded']))
                             self.client_player_dict[client_player_id]['delay'].append(delay)
                             #keep only the 10 last delay measure
                             if len(self.client_player_dict[client_player_id]['delay']) > 10:
                                 self.client_player_dict[client_player_id]['delay'].pop(0)
                             self.client_player_dict[client_player_id]['book_request'] = None
-                            self.client_player_dict[client_player_id]['status'] = 'STANDBY'
-                            
+                            self.client_player_dict[client_player_id]['status'] &= ~PLAYER_STATUS_ACTIVE
+                    
+                    for player_id in self.server_player_dict.keys():
+                        self.server_player_dict[player_id]['player_obj'].send_have_message(book_index)  
+
+                        
                 elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_KILL_CNX_PLAYER_CLIENT.value:
                     kill_player_id, ip = info
-                    print('Player manager receive notification a client player has been killed qith id = ' + str(kill_player_id))
+                    print('Player manager receive notification a client player has been killed with id = ' + str(kill_player_id))
                     #remove the player from the dictionnary
                     if kill_player_id in self.client_player_dict.keys():
                         if self.client_player_dict[kill_player_id]['ip'] == ip:
                             del self.client_player_dict[kill_player_id]
-                            self.kill_player_server(kill_player_id, ip)
-                            
+                            self.kill_player_server(kill_player_id, ip)                            
 
                 elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_KILL_CNX_PLAYER_SERVER.value:
-                    print('Player manager receive notification kill client player')
-                    kill_player_id, ip = info
+                    logger.debug(self.extra_log, 'Player manager receive notification kill server player')
+                    player, kill_player_id, ip = info
                     nb_client_player = len(self.server_player_list)
+                    if kill_player_id in self.server_player_dict.keys():
+                        del self.server_player_dict[kill_player_id] 
+                        self.kill_player_client(kill_player_id)                        
+                    
                     for i in range(0, nb_client_player):
-                        if self.server_player_list[i].get_client_player_id() == kill_player_id:
-                            if self.server_player_list[i].get_client_player_ip() == ip:                        
-                                print('Player manager remove client ' + str(kill_player_id) + 'client thread alive = ' + str(self.server_player_list[i].is_client_alive()))
-                                self.server_player_list.pop(i)
-                                self.kill_player_client(kill_player_id, ip)
-                                break
+                        if self.server_player_list[i] == player:                       
+                            logger.debug(self.extra_log, 'Player manager remove client ' + str(kill_player_id) + 'client thread alive = ' + str(self.server_player_list[i].is_client_alive()))
+                            self.server_player_list.pop(i)
+                            self.kill_player_client(kill_player_id)
+                            break
+                                
+                elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_MANAGE_SERVER_CLIENT.value:   
+                    logger.debug(self.extra_log, 'Manager check to unchoke player t=' + str(time.time()))
+                    if self.server_thread_timer != None:
+                        if self.server_thread_timer.is_alive() :
+                            self.server_thread_timer.cancel()   
+                            self.server_thread_timer = None                          
+                
+                    self.manage_server_client()
+                    self.server_thread_timer = Timer(30, self.send_server_client_manage_message).start()    
 
         t = Thread(target=queue_consumer)
         return t 
         
         
-    def kill_player_client(self, player_id, ip) :
-        print('Kill ip ' + str(ip))
+    def kill_player_client(self, player_id) :
         if player_id in self.client_player_dict.keys():
-            if self.client_player_dict[player_id]['ip'] == ip:
-                self.client_player_dict[player_id].kill_player()
+            self.client_player_dict[player_id]['player_obj'].kill_player()
         else:
-            print('Cannot find a client player with ' + str(player_id) + ' to kill')
-        
+            logger.debug(self.extra_log, 'Cannot find a client player with ' + str(player_id) + ' to kill')
+            #print(self.client_player_dict)
+   
         
     def kill_player_server(self, kill_player_id, kill_ip) :
-        found_player = False
         print('Need to kill ' + str(kill_player_id) + ' and ip ' + str(kill_ip))
-        
-        for player in self.server_player_list:        
-            player_id = player.get_client_player_id()
-            player_ip = player.get_client_player_ip()  
-            print('Try ' + str(player_id) + ' with ip ' + str(player_ip))
+        found_player = False
+        # check if the server player is registered
+        if kill_player_id in self.server_player_dict.keys():        
+            player_ip = self.server_player_dict[kill_player_id]['player_obj'].get_client_player_ip()              
             if player_id == kill_player_id and player_ip == kill_ip:
+                self.server_player_dict[kill_player_id]['player_obj'].kill_player()                
+                print('Kill player ' + str(kill_player_id) + ' with ip ' + str(kill_ip))  
                 found_player = True                
-                player.kill_player()
+            
+        if found_player == False:
+            logger.debug(self.extra_log, 'Cannot find a server player with ' + str(kill_player_id) + ' to kill')
                 
-                print('Kill player ' + str(kill_player_id) + ' with ip ' + str(kill_ip)) 
-                break   
-                
-        if found_player == False :
-            print('Cannot find a server player with ' + str(kill_player_id) + ' to kill')
-                
-    def get_active_player_number(self):
+    def get_active_client_player_number(self):
         nb_active = 0
         for player_id in self.client_player_dict.keys():            
-            if self.client_player_dict[player_id]['status'] == 'ACTIVE':
+            if self.client_player_dict[player_id]['status'] & PLAYER_STATUS_ACTIVE:
                 nb_active += 1
         return nb_active
 
@@ -569,23 +532,23 @@ class PlayerConnectionManager(object):
         #q_msg_id, player = self.q.get()       
         #if q_msg_id == PlayerQMsgEnum.QUEUE_CHECK_CHOKE.value:
         #if nb_standby >= 50: # maximum number of connections = 50
-         #   self.client_player_dict[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, player))
+         #   self.client_player_dict[player_id]['player_obj'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, player))
 
-    def make_unchoke(self): 
-        nb_standby = 0
-        print(self.client_player_dict)
-        for player_id in self.client_player_dict.keys():            
-            if self.client_player_dict[player_id]['status'] == 'STANDBY':
-                nb_standby += 1
-        q_msg_id, player = self.q.get()       
-        if q_msg_id == PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND.value:
-            if nb_standby < 50: # maximum number of connections = 50
-                self.client_player_dict[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_CHANGE_STATE_UNCHOKE, player))
+    # def make_unchoke(self): 
+        # nb_standby = 0
+        # print(self.client_player_dict)
+        # for player_id in self.client_player_dict.keys():            
+            # if self.client_player_dict[player_id]['status'] & PLAYER_STATUS_CONNECTED:
+                # nb_standby += 1
+        # q_msg_id, player = self.q.get()       
+        # if q_msg_id == PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND.value:
+            # if nb_standby < 50: # maximum number of connections = 50
+                # self.client_player_dict[player_id]['player_obj'].get_client_queue().put((PlayerQMsgEnum.QUEUE_CHANGE_STATE_UNCHOKE, player))
                 
-    def get_standby_player_number(self):
+    def get_standby_client_player_number(self):
         nb_standby = 0
         for player_id in self.client_player_dict.keys():
-            if self.client_player_dict[player_id]['status'] == 'STANDBY':
+            if (self.client_player_dict[player_id]['status'] & PLAYER_STATUS_CONNECTED) and not (self.client_player_dict[player_id]['status'] & PLAYER_STATUS_ACTIVE):
                 nb_standby += 1
         return nb_standby
 
@@ -597,30 +560,191 @@ class PlayerConnectionManager(object):
                     is_requested = False
         return is_requested        
 
-    def make_interested(self): # Whether to send interested message or not
-        for player_id in self.client_player_dict.keys():
-            if self.client_player_dict[player_id]['status'] == 'STANDBY':
-                self.client_player_dict[player_id]['missing_book'] = self.book.match_bitfield(self.client_player_dict[player_id]['bitfield'])
-                if self.client_player_dict[player_id]['missing_book'] != None:
-                    self.client_player_dict[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_INTERESTED_SEND, player_id))
+    def make_interested(self, player_id): # Whether to send interested message or not
+        #print('Manager check if interested by client ' + str(player_id))
+        if player_id in self.client_player_dict.keys():
+            if self.client_player_dict[player_id]['status'] & PLAYER_STATUS_CONNECTED:               
+                self.client_player_dict[player_id]['missing_book'] = self.book.match_bitfield(self.client_player_dict[player_id]['bitfield'])                
+                if self.client_player_dict[player_id]['missing_book'] != []:
+                    logger.info(self.extra_log, 'Manager notify interested to player ' + str(player_id))
+                    self.client_player_dict[player_id]['player_obj'].send_interested()
+                    self.client_player_dict[player_id]['status'] |= PLAYER_STATUS_INTERESTED
                 else:
-                    self.client_player_dict[player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED_SEND, player_id))
-                    
+                    logger.info(self.extra_log, 'Manager notify NOT interested to player '+ str(player_id))
+                    self.client_player_dict[player_id]['player_obj'].send_not_interested()
+                    self.client_player_dict[player_id]['status'] &= ~PLAYER_STATUS_INTERESTED #not interested
+
+    def get_player_dowload_size(self, player_id): 
+        """Get how much was download from a player
+        """
+        if player_id in self.client_player_dict.keys():
+            return self.client_player_dict[player_id]['downloaded']
+        else:
+            return 0            
+     
+    def get_server_not_choke_client_number(self):
+        nb_client = 0
+        for player_id in self.server_player_dict.keys():
+            if not (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_CHOKE):
+                nb_client += 1
+        return nb_client  
+        
+    def get_server_choke_client_number(self):
+        nb_client = 0
+        for player_id in self.server_player_dict.keys():
+            if (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_CHOKE):
+                nb_client += 1
+        return nb_client   
+        
+    def get_not_choke_player(self):
+        list_player = []
+        for player_id in self.server_player_dict.keys():
+            if not (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_CHOKE):
+                list_player.append(player_id)  
+        return list_player 
+        
+    def get_not_interested_not_choke_player(self):
+        list_player = []
+        for player_id in self.server_player_dict.keys():
+            if not (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_INTERESTED) and \
+                             not (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_CHOKE):
+                list_player.append(player_id)  
+        return list_player  
+        
+    def get_interested_choke_player(self):
+        list_player = []
+        for player_id in self.server_player_dict.keys():
+            if (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_INTERESTED) and \
+                             (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_CHOKE):
+                list_player.append(player_id) 
+        return list_player 
+
+    def get_interested_player(self):
+        list_player = []
+        for player_id in self.server_player_dict.keys():
+            if (self.server_player_dict[player_id]['status'] & PLAYER_STATUS_INTERESTED):
+                list_player.append(player_id) 
+        return list_player 
+ 
+    def manage_server_client(self):
+        logger.info('#!#!#!#!# Manage server client dt=' + str(time.time() - self.server_manager_time))
+        nb_client = len(self.server_player_dict) 
+        
+        if nb_client == 0:
+            return
+        
+        nb_not_choke_client = self.get_server_not_choke_client_number()
+        nb_choke_client = nb_client - nb_not_choke_client
+        logger.info(self.extra_log, 'S- The number of server client is ' + str(nb_client))
+
+        self.server_manager_time = time.time()
+        #logger.info(self.extra_log, self.server_player_dict)
+        
+        # simple case we can unchoke everybody        
+        if nb_client <= MAX_SERVER_CONNECTION_NUMBER:            
+            print('S- simple case')
+            for player_id in self.server_player_dict.keys():
+                if self.server_player_dict[player_id]['status'] & PLAYER_STATUS_CHOKE:
+                    logger.info(self.extra_log, 'Manager request unchoke message to client ' + str(player_id))
+                    self.server_player_dict[player_id]['player_obj'].send_unchoke()
+                    self.server_player_dict[player_id]['status'] &= ~PLAYER_STATUS_CHOKE
+                    self.server_player_dict[player_id]['time_choke_change'] = time.time()
+
+            for player_id in self.server_player_dict.keys():
+                downloaded_size = self.get_player_dowload_size(player_id)
+                logger.info(self.extra_log, 'client ' + str(player_id) + ' status ' + \
+                                str(bin(self.server_player_dict[player_id]['status'])) + ' \t download '\
+                                + str(downloaded_size) + '\t upload ' + str(self.server_player_dict[player_id]['uploaded']) )
+
+        else:
+            print('S- There are more players than connection')
+            list_noti_notc = self.get_not_interested_not_choke_player()
+            list_i_c = self.get_interested_choke_player()
+            nb_i_c = len(list_i_c)
+            nb_noti_notc = len(list_noti_notc)
+            print('S- There are ' + str(nb_i_c) + ' interested and choke players')
+            print('S- There are ' + str(nb_noti_notc) + ' NOT interested and unchoke players')
+            if nb_i_c :
+                if nb_noti_notc:
+                    # some players are not interested and unchoke => choke
+                    random.shuffle(list_noti_notc) 
+                    k = 0
+                    while k < nb_i_c and k < nb_noti_notc:
+                        player_id = list_noti_notc[k]
+                        self.server_player_dict[player_id]['player_obj'].send_choke()
+                        self.server_player_dict[player_id]['status'] |= PLAYER_STATUS_CHOKE
+                        self.server_player_dict[player_id]['time_choke_change'] = time.time()        
+                        k += 1
+                        
+                list_not_c = self.get_not_choke_player()
+                nb_not_c = len(list_not_c)
+                print('There are ' + str(nb_not_c) + ' unchoke players')
+                if nb_i_c <= (MAX_SERVER_CONNECTION_NUMBER - nb_not_c):
+                    # can unchoke everybody as enough connection
+                    print('S- Enough connection to unchoke all interested')
+                    for player_id in list_i_c:
+                        self.server_player_dict[player_id]['player_obj'].send_unchoke()
+                        self.server_player_dict[player_id]['status'] &= ~PLAYER_STATUS_CHOKE
+                        self.server_player_dict[player_id]['time_choke_change'] = time.time()  
+                
+                else : 
+                    # pick randomly among all interested players
+                    # those who are already unchoke are also considered
+                    print('S - Need to select who to choke')
+                    list_i = self.get_interested_player()
+                    random.shuffle(list_i) 
+                    if len(list_i) <= MAX_SERVER_CONNECTION_NUMBER :
+                        list_selected = list_i
+                    else:
+                        list_selected = list_i[0:MAX_SERVER_CONNECTION_NUMBER]
+                        
+                    print('Selected players are ' + str(list_selected))
+                    #choke the one that are unchoke and not selected
+                    list_not_c = self.get_not_choke_player()
+                    for player_id in list_not_c:
+                        if player_id not in list_selected :
+                            # player not selected => choke
+                            self.server_player_dict[player_id]['player_obj'].send_choke()
+                            self.server_player_dict[player_id]['status'] |= PLAYER_STATUS_CHOKE
+                            self.server_player_dict[player_id]['time_choke_change'] = time.time()                             
+              
+                    for player_id in list_selected:
+                        if player_id not in list_not_c :
+                            self.server_player_dict[player_id]['player_obj'].send_unchoke()
+                            self.server_player_dict[player_id]['status'] &= ~PLAYER_STATUS_CHOKE
+                            self.server_player_dict[player_id]['time_choke_change'] = time.time()    
+                            
+            else:    
+                print('S- All interested are unchoked -> nothing to do')            
+            for player_id in self.server_player_dict.keys():
+                downloaded_size = self.get_player_dowload_size(player_id)
+                logger.info(self.extra_log, 'S- client ' + str(player_id) + ' status ' + str(bin(self.server_player_dict[player_id]['status'])) \
+                                         + ' \t download ' + str(downloaded_size) + '\t upload ' + str(self.server_player_dict[player_id]['uploaded']) )
+      
     def make_request(self):
-        #print(self.client_player_dict)
-        nb_active_players = self.get_active_player_number()
+        if self.book.missing_books(self.book.get_bitfield()) == []:
+            # no book need to be downloaded
+            return
+        
+        nb_active_players = self.get_active_client_player_number()
+        nb_standby_players = self.get_standby_client_player_number()
         #print('There are '+ str(nb_active_players) + ' active players')
         loop = 0
-        while nb_active_players < 4 and self.get_standby_player_number():
-            #print('Loop ' + str(loop))
+        logger.info(self.extra_log, 'C- Number of active client players ' + str(nb_active_players))
+        logger.info(self.extra_log, 'C- Number of standby client players ' + str(nb_standby_players))
+        
+        while nb_active_players < 4 and nb_standby_players:
+        
+            logger.info(self.extra_log, 'C- Loop ' + str(loop))
             book_count = {}
             for player_id in self.client_player_dict.keys():
-                if self.client_player_dict[player_id]['status'] == 'STANDBY':
+                if (self.client_player_dict[player_id]['status'] & PLAYER_STATUS_CONNECTED):
                     self.client_player_dict[player_id]['missing_book'] = self.book.match_bitfield(self.client_player_dict[player_id]['bitfield'])
+            #logger.info(self.extra_log, self.client_player_dict)            
             
             #get the count of book presence amoung the different players
             for player_id in self.client_player_dict.keys():
-                if self.client_player_dict[player_id]['status'] == 'STANDBY':
+                if (self.client_player_dict[player_id]['status'] & PLAYER_STATUS_CONNECTED):
                     for book_no in self.client_player_dict[player_id]['missing_book']:    
                         if book_no in book_count.keys():
                             book_count[book_no] += 1
@@ -630,8 +754,8 @@ class PlayerConnectionManager(object):
             #get the list of book_index by increasing frequence number among the other players
             freq_key=[]            
             for key, value in sorted(book_count.items(), key=lambda item: (item[1], item[0])):
-                freq_key.append(key)          
-            
+                freq_key.append(key)  
+                            
             candidate_book_index = []
             if len(freq_key):
                 # get the frequency of the rarest book
@@ -641,7 +765,8 @@ class PlayerConnectionManager(object):
                 while idx<len(freq_key) and book_count[freq_key[idx]] == frequency:
                     candidate_book_index.append(freq_key[idx])
                     idx += 1
-        
+                    
+            #print(candidate_book_index)
             # scan random table of rarest book index
             if len(candidate_book_index):
                 #random.seed(time.time_ns())
@@ -651,19 +776,21 @@ class PlayerConnectionManager(object):
                     if self.check_book_not_requested(book_index) == True:
                         #print('the book is available')
                         for player_id in self.client_player_dict.keys():            
-                            if self.client_player_dict[player_id]['status'] == 'STANDBY':
+                            if (self.client_player_dict[player_id]['status'] & PLAYER_STATUS_CONNECTED) \
+                                     and not (self.client_player_dict[player_id]['status'] & PLAYER_STATUS_ACTIVE):
                                 if book_index in self.client_player_dict[player_id]['missing_book']:
                                     list_book_owner.append(player_id)
+                                    print('C- Player ' + str(player_id) + ' can accept index ' + str(book_index) +' book request ')
                         if len(list_book_owner):         
                             break
                             
                 if len(list_book_owner):
-                    print('Book index: ' + str(book_index) + ' has players')
+                    print('C- Book index: ' + str(book_index) + ' has players')
                     picked_player_id = random.choice(list_book_owner)               
-                    print('Manager send request to player ' + str(picked_player_id) )    
-                    self.client_player_dict[picked_player_id]['player_com'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_REQUEST, book_index))
+                    print('C- Manager send request book ' + str(book_index) + ' to player ' + str(picked_player_id) )    
+                    self.client_player_dict[picked_player_id]['player_obj'].get_client_queue().put((PlayerQMsgEnum.QUEUE_MSG_REQUEST, book_index))
                     self.client_player_dict[picked_player_id]['book_request'] = book_index
-                    self.client_player_dict[picked_player_id]['status'] = 'ACTIVE'
+                    self.client_player_dict[picked_player_id]['status'] |= PLAYER_STATUS_ACTIVE
                 else:
                     #print('No more players available')
                     break
@@ -672,8 +799,9 @@ class PlayerConnectionManager(object):
                 #print('No book to fetch')
                 break
                 
-            nb_active_players = self.get_active_player_number()
-            print('There are '+ str(nb_active_players) + ' active players')
+            nb_active_players = self.get_active_client_player_number()
+            nb_standby_players = self.get_standby_client_player_number()
+            print('C- There are '+ str(nb_active_players) + ' active players' + ' and ' + str(nb_standby_players) + ' standby player')
             loop += 1
         #print('Exit make request')
 
@@ -696,8 +824,8 @@ class PlayerCommunicationClient(object):
         self.q = queue.Queue() 
         self.client_bitfield = None
         self.client_choke = False
-        self.player_choke = False        
-        
+        self.player_interested = None
+        self.extra_log = 'S - %s'
         # connection error is managed outside
         self.client_socket = socket.create_connection((self.client_ip, self.client_listening_port))
         self.t1 = self.handle_client_listen()
@@ -709,16 +837,38 @@ class PlayerCommunicationClient(object):
         self.requested_book = None
         self.request_time = 0
         self.reception_delay = 0
+        self.extra_log = 'C - %s'
+        
+    def add_book_index(self, book_index):
+        """ add book index to the client bitfield
+        """
+        byte_index = book_index // 8
+        bit_index = book_index % 8
+        shift_index = 8 - (bit_index + 1)
+        byte_mask = 1 << shift_index
+
+        self.client_bitfield[byte_index] |= byte_mask           
         
     def kill_player(self):
-        pass
+        try:
+            self.client_socket.close()
+        except :
+            
+            pass
+        self.q.put((PlayerQMsgEnum.QUEUE_MSG_KILL_CONNECTION, None))
         
     def get_client_queue(self):
         return self.q 
      
     def get_client_player_id(self):
         return self.client_player_id
-    
+        
+    def send_interested(self):
+        self.q.put((PlayerQMsgEnum.QUEUE_MSG_INTERESTED, None))
+        
+    def send_not_interested(self):
+        self.q.put((PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED, None))   
+        
     def handle_client_listen(self):
         def client():
             remain = b''
@@ -730,7 +880,7 @@ class PlayerCommunicationClient(object):
                     print('Killing listening client player ' + str(self.client_player_id))                
                     break
                     
-                if msg != b'':                    
+                if msg != b'': 
                     full_msg = remain + msg
                     #print(full_msg)      
                     try :
@@ -739,34 +889,39 @@ class PlayerCommunicationClient(object):
                         status = -2
                         print('Message is corrupted')
                     
-                    if status == 0:                                         
-                        if objMsg.get_message_type() == 'bitfield':
-                            print('Got bitfield message')
+                    if status == 0:   
+                        msg_id = objMsg.get_message_type()
+                        #print('Client msd id = ' + str(msg_id))
+                        if msg_id == 'bitfield':
+                            logger.info(self.extra_log, 'Got bitfield message from player ' + str(self.client_player_id))
                             self.client_bitfield = objMsg.get_bitfield()
                             self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_BITFIELD_REGISTER, (self.client_player_id, self.client_bitfield)))
-                        
-                        elif objMsg.get_message_type() == 'choke': 
-                            print('choke message received')           
+
+                        elif msg_id == 'have':
+                            book_index = objMsg.get_book_index()
+                            self.add_book_index(book_index)
+                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_HAVE, (self.client_player_id, book_index)))   
+                            
+                        elif msg_id == 'choke': 
+                            logger.debug(self.extra_log, 'choke message received' + ' at t=' + str(time.time()))           
                             # TODO to deal with it better            
-                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, (self.client_player_id)))
-                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND, (self.client_player_id)))
+                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_CLIENT, (self.client_player_id)))
                             self.client_choke = True
                             
-                        elif objMsg.get_message_type() == 'unchoke':
-                            print('unchoke message received')
+                        elif msg_id == 'unchoke':
+                            logger.debug(self.extra_log, 'unchoke message received' + ' at t=' + str(time.time()))
                             # TODO to deal with it better     
-                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND, (self.client_player_id)))
-                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SEND, (self.client_player_id)))
+                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_CLIENT, (self.client_player_id)))
                             self.client_choke = False                            
                             
-                        elif objMsg.get_message_type() == 'book':    
-                            print('receive book message')
+                        elif msg_id == 'book':    
+                            logger.debug(self.extra_log, 'receive book message')
                             if objMsg.get_book_index() == self.requested_book:
                                 payload = objMsg.get_payload()
                                 if self.meta_file.get_book_hash(self.requested_book) == sha1(payload).digest():
                                     self.reception_delay = time.time()-self.request_time
-                                    print('Book received in ', self.reception_delay)
-                                    print('Book signature is correct')
+                                    logger.info(self.extra_log, 'Book received in ' + str(self.reception_delay) + ' from player ' + str(self.client_player_id))
+                              
                                     self.book.queue_write(self.requested_book, payload, (self.q, PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_WRITE))
 
                                 else:
@@ -775,11 +930,15 @@ class PlayerCommunicationClient(object):
                                 print('This was not what book index I requested')
                                 
                     elif status == -2:
-                        print('The message is corrupted - Disconnect the client player')
+                        logger.error('The message is corrupted - Disconnect the client player')
+                        logger.debug(full_msg)                        
                         self.q.put((PlayerQMsgEnum.QUEUE_MSG_KILL_CONNECTION, None))
-                        print('Killing listening client player ' + str(self.client_player_id))
+                        logger.error('Killing listening client player ' + str(self.client_player_id))
                         self.client_socket.close()
-                        break                            
+                        break  
+            
+            print('Exit listening thread client player ' + str(self.client_player_id)) 
+                        
         t = Thread(target=client)
         return t          
   
@@ -787,68 +946,58 @@ class PlayerCommunicationClient(object):
     def handle_client_send(self):
         def client():
             state = STATE_INIT
-
             while True:
                 if state == STATE_INIT:
-                    handshake_send = message.HandshakeMsg(self.player_id,self.meta_file.get_info_hash()).msg_encode()
+                    handshake_send = message.HandshakeMsg(self.player_id, self.meta_file.get_info_hash()).msg_encode()
                     self.client_socket.sendall(handshake_send)
-                    print('Send handshake')
+                    logger.info(self.extra_log, 'Send handshake to player ' + str(self.client_player_id))
                     state = STATE_WAIT_QUEUE
                 
                 elif state == STATE_WAIT_QUEUE:
                     q_msg_id, info = self.q.get()
 
                     if q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_REQUEST.value:
-                        print('Receive send request for player ' + str(self.client_player_id) + ' with p_chocke=' + str(self.player_choke) + ' and c_ckoke=' + str(self.client_choke))
-                        if self.player_choke == False :
-                            if self.client_choke == False :
-                                self.requested_book = info
-                                if self.requested_book is not None:
-                                    print('A request from manager has been received')              
-                                    self.requested_book = self.requested_book
-                                    request_send = message.RequestMsg(self.requested_book).msg_encode()
-                                    self.client_socket.sendall(request_send)
-                                    self.request_time = time.time()                       
-                                    
+                        logger.debug(self.extra_log, 'Receive send request for player ' + str(self.client_player_id) + ' and server_ckoke=' + str(self.client_choke)  + ' at t=' + str(time.time()))
+    
+                        if self.client_choke == False :
+                            self.requested_book = info
+                            if self.requested_book is not None:
+                                logger.debug(self.extra_log, 'A request from manager has been received for client ' + str(self.client_player_id))              
+                                request_send = message.RequestMsg(self.requested_book).msg_encode()
+                                self.client_socket.sendall(request_send)
+                                self.request_time = time.time() 
                         else :
                             # other player didn't respect choke state. Shall we shut connection with player?
-                            print('Player ' + str(self.client_player_id) + ' did not respect choked state')
+                            logger.error('Player ' + str(self.client_player_id) + ' did not respect choked state')
                                 
                     elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_WRITE.value:
                         #send a confirmation to the player manager that a book has been received
-                        self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_BOOK_RECEIVED, (self.client_player_id, self.requested_book, self.reception_delay)))
-                        print('Confirm to manager writing of book ' + str(self.requested_book))
+                        book_index, data_length = info
+                        self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_BOOK_RECEIVED, (self.client_player_id, book_index, data_length, self.reception_delay)))
+                        logger.debug(self.extra_log, 'Confirm to manager writing of book ' + str(self.requested_book))
                         self.request_time = 0
                         self.reception_delay = 0
                         self.requested_book = None
                         
-                    elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_INTERESTED_SEND.value and self.client_choke == False:
-                        # in bittorrent protocole we should express interested/ not interested msg even if we are choke
-                        interested_send = message.InterestedMsg().msg_encode()
-                        self.client_socket.sendall(interested_send)
-                        print('Send interested to player ' + str(self.client_player_id))
+                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_INTERESTED.value:
+                        # in bittorrent protocol we should express interested/ not interested msg even if we are choke
+                        if self.player_interested != True:                        
+                            interested_send = message.InterestedMsg().msg_encode()
+                            self.client_socket.sendall(interested_send)
+                            logger.debug(self.extra_log, 'Send interested to player ' + str(self.client_player_id))
+                            self.player_interested = True
                             
-                    elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED_SEND.value and self.client_choke == False :
-                        # in bittorrent protocole we should express interested/ not interested msg even if we are choke
-                        not_interested_send = message.NotInterestedMsg().msg_encode()
-                        self.client_socket.sendall(not_interested_send)
-                        print('Send not interested to player ' + str(self.client_player_id))
-
-                    elif q_msg_id == PlayerQMsgEnum.QUEUE_CHANGE_STATE_UNCHOKE.value:
-                        print('A request from manager has been received to unchoke')
-                        unchoke_send = message.UnchokeMsg().msg_encode()
-                        self.client_socket.sendall(unchoke_send)
-                        print('Send unchoke message')
-                        self.player_choke = False 
-                        
-                    elif q_msg_id == PlayerQMsgEnum.QUEUE_MSG_CHOKE_SEND.value: # If in queue to send choke message, send choke message
-                        choke_send = message.ChokeMsg().msg_encode()
-                        self.client_socket.sendall(choke_send)
-                        print('Send choke message')
-                        self_choked = True           
+                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED.value:
+                        # in bittorrent protocol we should express interested/ not interested msg even if we are choke
+                        if self.player_interested != False:
+                            not_interested_send = message.NotInterestedMsg().msg_encode()
+                            self.client_socket.sendall(not_interested_send)
+                            logger.debug(self.extra_log, 'Send not interested to player ' + str(self.client_player_id))
+                            self.player_interested = False
                         
                     elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_KILL_CONNECTION.value :
-                        print('Killing sending client player ' + str(self.client_player_id))
+
+                        logger.debug(self.extra_log, 'Killing sending client player ' + str(self.client_player_id))
                         self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_KILL_CNX_PLAYER_CLIENT, (self.client_player_id, self.client_ip)))
                         state = STATE_PLAYER_KILLED
                         break
@@ -856,111 +1005,13 @@ class PlayerCommunicationClient(object):
                 elif state == STATE_PLAYER_KILLED:
                     print('Player killed ' + str(self.client_player_id))
                     time.sleep(30)
-                        
+                    
+            print('Exit sending thread client player ' + str(self.client_player_id))                 
                         
         t = Thread(target=client)
         return t  
         
-    # def handshakes(self): # Handshake with others
-        # for player in self.players:
-            # player = socket.create_connection((self.client_ip, self.client_port))
-            # handshake_send = message.HandshakeMsg(self.player_id,self.info_hash).msg_encode()
-            # socket.sendall(handshake_send)
-            # received_message = s.recv(1024)
-            # print(received_message)
-            # while True:
-                # client_socket, addr =  s.accept()
-                # status, remain, objMsg = message.ComMessage.msg_decode(received_message)
-                # if objMsg.get_message_type == 'handshake': # Create two threads when mututal handshake happens
-                    # other_not_choked = True
-                    # handle_player_listen(s,client_socket, my_bitfield, other_player_choked).start()
-                    # handle_player_send(s,client_socket, my_bitfield, other_player_choked).start()
-            
-    # def player_listen(self, my_bitfield, s): # Accept handshakes
-        # while True:
-            # msg = client_socket.recv(1024)
-            # status, remain, objMsg = message.ComMessage.msg_decode(msg)
-            # if nb_connections >> max_connections:
-                  # choke_send = message.ChokeMsg().msg_encode()
-                  # server_socket.sendall(choke_send)  
-                  # other_not_choked = False
-            # handle_player_listen(client_socket, q, my_bitfield, other_not_choked).start() # A listen thread
-            # handle_player_send(client_socket, q, my_bitfield, other_not_choked).start() # A send thread
-
-    # def handle_player_listen(self,client_socket, my_bitfield, other_player_choked): # Listen thread
-        # def handle():
-            # # TODO import books class for book management and bitfields
-            # other_bitfield = [] # Stores bitfield of other players
-            # already_received = [] 
-            # remain_received = [] # Stores remains of received book messages
-            # # TODO When get information from book class about bitfield, change bitfield to bytearray type from list object
-            # # TODO Similar for the list
-            # while True:
-                # try:
-                    # message = client_socket.recv(1)
-                    # time.sleep(10)
-                    # if message is not None:
-                        # status, remain, objMsg = message.ComMessage.msg_decode(message) 
-                        
-                        # if objMsg.get_message_type == 'Unchoke' and nb_connections << max_connections:
-                            # unchoke_send = message.UnchokeMsg().msg_encode()
-                            # server_socket.sendall(unchoke_send)  
-                            # other_not_choked = True
-                        # elif objMsg.get_message_type == 'keep alive':  # Keep alive message
-                            # time.sleep(30)
-                        # elif objMsg.get_message_type == 'have': # If receive a have message from a player, update bitfield
-                            # have_book_index = objMsg.get_book_index()
-                            # # Update other_bitfield   
-                        # elif objMsg.get_message_type == 'choke':
-                            # other_not_choked = False
-                        # elif objMsg.get_message_type == 'bitfield':                            
-                            # other_bitfield = objMsg.get_bitfield() # Other player's bitfield
-                            # count = 0
-                            # count1 = 0
-                            # for i in range(len(my_bitfield)): # Interested
-                                # if my_bitfield[[i]] == 0 and other_bitfield[[i]] == 1: 
-                                    # interested_message = message.IntererestedMsg(i).msg_encode()
-                                    # client_socket.sendall(interested_message) 
-                                # elif other_bitfield[[i]] is 1:
-                                    # count += 1
-                                    # if my_bitfield[[i]] is 1:
-                                        # count1 += 1
-                                # if count == count1 and count != 0: # Not interested
-                                    # NotInterested_message = message.NotIntererestedMsg(i).msg_encode()
-                                    # client_socket.sendall(NotInterested_message)
-                        # if objMsg.get_message_type == 'book': # Book message
-                            # received_book_index = objMsg.get_book_index() # Index of the received book
-                            # for i in alread_received: # Check if this book has already been received
-                                # if received_book_index == already_received[[i]] and book[[i]] << ObjMsg.get_payload(): # If the previously received book had less length, update the book
-                                    # book[[i]]  = ObjMsg.get_payload()
-                                # else:
-                                    # remain_received[[i]] = remain
-                            # already_received[[received_book_index]] = 1
-                    # else:
-                        # print("Message is None", socket)
-                        # break
-                # except:
-                    # print("Client disconnected", socket)
-                    # break
-
-        # def handle_player_send(self,s,client_socket, my_bitfield, other_player_choked): # Send thread
-            # def handle():
-                # while True:
-                    # try:
-                        # message = client_socket.recv(1)
-                        # if message is not None: 
-                            # status, remain, objMsg = message.ComMessage.msg_decode(message) 
-                            # if objMsg.get_message_type == 'request' and other_not_choked == True: # Book request
-                                # requested_book_index = objMsg.get_book_index()
-                                # if bitfield[[requested_book_index]] == 1 and Other_not_choked == True:
-                                    # book_message = BookMsg(requested_book_index, book_payload).msg_encode()
-                                    # client_socket.sendall(book_message)  
-                        # else:
-                            # print("Message is None", socket)
-                            # break
-                    # except:
-                        # print("Client disconnected", socket)
-                        # break       
+   
 
 
 class PlayerCommunicationServer(object):
@@ -978,10 +1029,11 @@ class PlayerCommunicationServer(object):
         self.q = queue.Queue() 
         self.client_player_id = None
         self.client_bitfield = None
-        self.client_interested = True
-        self.client_choke = False
-        self.player_choke = False
-        self.player_interested = True
+        self.client_interested = False
+        self.client_choke = True
+        self.extra_log = 'S - %s'
+        self.time_cnx = time.time()
+
         self.t1 = self.handle_client_listen()
         self.t1.daemon = True
         self.t1.start()
@@ -990,7 +1042,7 @@ class PlayerCommunicationServer(object):
         self.t2.start()         
 
         self.client_player_id = None
-        print('start listening to new client')
+
         
     def kill_player(self):    
         try:
@@ -1009,7 +1061,19 @@ class PlayerCommunicationServer(object):
         return self.client_player_id
         
     def get_client_player_ip(self): 
-        return self.addr[0].encode()    
+        return self.addr[0].encode() 
+        
+    def send_have_message(self, book_index):
+        """ put message in the queue to send message have to other players
+        """
+        self.q.put((PlayerQMsgEnum.QUEUE_MSG_HAVE, book_index))        
+
+    def send_choke(self):
+        self.q.put((PlayerQMsgEnum.QUEUE_MSG_CHOKE_SERVER, None))
+    
+    def send_unchoke(self):
+        self.q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SERVER, None))
+        
         
     def handle_client_listen(self):    
         def client():
@@ -1029,47 +1093,38 @@ class PlayerCommunicationServer(object):
                         status = -2
                         print('!!!!!!!!!!!Message is corrupted')
                         
-                    if status == 0:                                         
-                        if objMsg.get_message_type() == 'handshake': # Received handshake, put in queue to send bitfield
-                            print('Receive handshake message')
+                    if status == 0:  
+                        msg_id = objMsg.get_message_type()
+                        if msg_id == 'handshake': # Received handshake, put in queue to send bitfield                            
                             self.client_player_id = objMsg.get_player_id()
-                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_BITFIELD,None))
+                            logger.info(self.extra_log, 'Receive handshake message from player ' + str(self.client_player_id) + ' with adr ' + str(self.addr))
+                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_BITFIELD,None))  
+                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_HANDSHAKE_SERVER, (self, self.client_player_id)))
 
-                        if objMsg.get_message_type() == 'interested': # Received interested message, put in queue of inetersted clients
-                            print('Receive interested message from player ' + str(self.client_player_id))
-                            self.client_player_id = objMsg.get_player_id()
+                        elif msg_id == 'interested': # Received interested message, put in queue of inetersted clients
+                            logger.debug(self.extra_log, 'Receive interested message from player ' + str(self.client_player_id))    
+                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_INTERESTED, self.client_player_id ))
                             self.client_interested = True
                         
-                        if objMsg.get_message_type() == 'not interested': # Received handshake, put in queue of not interested clients
-                            print('Receive not interested message from player ' + str(self.client_player_id))
-                            self.client_player_id = objMsg.get_player_id()
+                        elif msg_id == 'not interested': # Received handshake, put in queue of not interested clients
+                            logger.debug(self.extra_log, 'Receive not interested message from player ' + str(self.client_player_id))
+                            self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_NOT_INTERESTED, self.client_player_id ))                            
                             self.client_interested = False
                             
-                        # TODO Count connections to PlayerCommunicationServer to send choke and unchoke messages
-                        if objMsg.get_message_type() == 'choke': # Received choke message, put in queue to send choke message
-                            print('Receive choke message')           
-                            self.client_choke = True   
-                            # Decide to choke when client choke
-                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_CHOKE, self.player_id))
-
-                        if objMsg.get_message_type() == 'unchoke':
-                            print('Receive unchoke message')
-                            self.client_choke = False 
-                            # Decide to unchoke when client unchoke
-                            self.q.put((PlayerQMsgEnum.QUEUE_MSG_UNCHOKE, self.player_id))
-                            
-                        if objMsg.get_message_type() == 'request': # Received a request message, get book index 
-                            if self.client_interested == True and self.client_choke == False and self.player_choke == False:                                
-                                book_index = objMsg.get_book_index()
-                                print('Receive request message for book ' + str(book_index))
+                        elif msg_id == 'request': # Received a request message, get book index
+                            book_index = objMsg.get_book_index()
+                            logger.debug(self.extra_log, 'Receive request message book ' + str(book_index) + ' for player ' + str(self.client_player_id) + 
+                                               ' with interest=' + str(self.client_interested) + ' choke=' + str(self.client_choke)  + ' at t=' + str(time.time()))
+                            if self.client_interested == True and self.client_choke == False : 
                                 # the request is sent to book manager, the book manager send the answer via the player queue
                                 self.book.queue_read(book_index, (self.q, PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ))
                             else:
-                                print('Book request received but the client was not interested') # TODO How to deal with this? Can this happen?                                
+                                logger.debug('Book request received but the client was not interested or choked') # TODO How to deal with this? Can this happen?                                
 
                             
                     elif status == -2:
-                        print('The message is corrupted - Disconnect the client player')
+                        print('The message is corrupted - Disconnect the server player')
+                        print(full_msg)
                         self.q.put((PlayerQMsgEnum.QUEUE_MSG_KILL_CONNECTION, None))
                         print('Killing listening client player ' + str(self.client_player_id))
                         try:
@@ -1078,6 +1133,8 @@ class PlayerCommunicationServer(object):
                             pass
                         break
                         
+            print('Exit listening thread server player ' + str(self.client_player_id))  
+            
         t = Thread(target=client)
         return t          
         
@@ -1087,56 +1144,78 @@ class PlayerCommunicationServer(object):
             state = STATE_WAIT_QUEUE            
             if state == STATE_WAIT_QUEUE:
                 while True:
-                    q_msg_id, info = self.q.get()       
+                    q_msg_id, info = self.q.get()  
+                    msg_send = b''                    
                     if q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_BITFIELD.value:
                         # A bitfield has been requested by a client player
-                        bitfield_send = message.BitfieldMsg(self.book.get_bitfield()).msg_encode()
-                        print('Send bitfield')
-                        self.client_socket.sendall(bitfield_send) 
+                        msg_send = message.BitfieldMsg(self.book.get_bitfield()).msg_encode()
+                        logger.info(self.extra_log, 'Send bitfield to player ' + str(self.client_player_id))
 
-                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_CHOKE.value: # Send choke message
-                        client_id = info
-                        choke_send = message.ChokeMsg().msg_encode()
-                        self.client_socket.sendall(choke_send)
-                        self.player_choked = True
+                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_HAVE.value:  
+                        # need to send a message have to other players after a book has been received
+                        book_index = info
+                        msg_send = message.HaveMsg(book_index).msg_encode()
+                        logger.debug(self.extra_log, 'Send have message to player ' + str(self.client_player_id))
+                                
+                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_CHOKE_SERVER.value: # Send choke message
+                        logger.debug('Send choke to player ' + str(self.client_player_id) + ' at t=' + str(time.time()))
+                        msg_send = message.ChokeMsg().msg_encode()                        
+                        self.client_choke = True
                         
-                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_UNCHOKE.value : # Send unchoke message
-                        client_id = info
-                        unchoke_send = message.UnchokeMsg().msg_encode()
-                        self.client_socket.sendall(unchoke_send)
-                        slef.player_choked = False               
+                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_UNCHOKE_SERVER.value : # Send unchoke message                        
+                        logger.debug('Send unchoke to player ' + str(self.client_player_id) + ' at t=' + str(time.time()))
+                        msg_send = message.UnchokeMsg().msg_encode()                        
+                        self.client_choke = False               
                 
-                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ.value  and self.player_choke == False : # Receive queue for sending books and send book
+                    elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_PAYLOAD_READ.value and self.client_choke == False : # Receive queue for sending books and send book
                         # A book is to be send a client player
                         # The message comes from the books manager
-                        print('Received payload from book manager')
+                        logger.debug('Received payload from book manager for player ' + str(self.client_player_id))
                         book_index, payload = info
-                        book_send = message.BookMsg(book_index, payload).msg_encode()
-                        self.client_socket.sendall(book_send)   
+                        msg_send = message.BookMsg(book_index, payload).msg_encode()                        
+                        # notify manager to update 'uploaded'                      
+                        self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_CLIENT_UPLOAD,(self.client_player_id, len(payload))))
                         
                     elif q_msg_id.value == PlayerQMsgEnum.QUEUE_MSG_KILL_CONNECTION.value :
-                        print('Killing sending server player ' + str(self.client_player_id))
-                        self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_KILL_CNX_PLAYER_SERVER, (self.client_player_id, self.addr)))
+                        logger.warning('Killing sending server player ' + str(self.client_player_id))
+                        self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_KILL_CNX_PLAYER_SERVER, (self, self.client_player_id, self.addr)))
                         state = STATE_PLAYER_KILLED
                         break
-                        
+                      
+                    if msg_send != b'':
+                        try:                            
+                            self.client_socket.sendall(msg_send)                            
+                        except:
+                            logger.error(self.extra_log, 'Cannot reach player socket ' + str(self.client_player_id) )
+                            state = STATE_PLAYER_KILLED
+                            break
+
+                      
             elif state == STATE_PLAYER_KILLED:
                 # shouldn't come her
                 print('Player killed ' + str(self.client_player_id))
                 time.sleep(30)      
-                
+            
+            print('Exit sending thread server player ' + str(self.client_player_id))  
+
+            
         t = Thread(target=client)
         return t          
         
-        
+    # logger.critical('This is a critical message.')
+# logger.error('This is an error message.')
+# logger.warning('This is a warning message.')
+# logger.info('This is an informative message.')
+# logger.debug('This is a low-level debug message.')    
                        
 if __name__== "__main__":
     root_dir = sys.argv[1]
     meta_file_path = sys.argv[2]
     player_id = sys.argv[3] 
-    print(root_dir)
-    print(meta_file_path)
-    print(player_id)    
+    try:
+        role = int(sys.argv[4])
+    except:
+        role = 2   
     
     if player_id == 'None':
         player_id = None
@@ -1144,4 +1223,4 @@ if __name__== "__main__":
         player_id = player_id.encode()
   
     #player_id = b'-RO0101-7ec7150dddf3'
-    main(root_dir, meta_file_path, player_id)
+    main(root_dir, meta_file_path, player_id, role)
