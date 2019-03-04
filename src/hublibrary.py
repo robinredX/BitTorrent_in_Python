@@ -16,7 +16,8 @@ import message
 import utils
 from utils import LibQMsgEnum, HubQMsgEnum
 
-
+HUB_MIN_INTERVAL_CNX = 5
+HUB_INTERVAL_CNX = 15
 
 class HubLibrary(object):
     """ Manage access to the hub library which deals with the list of players
@@ -40,7 +41,7 @@ class HubLibrary(object):
                 
                 if qmsg_id.value == LibQMsgEnum.MSGQ_ADD_PLAYER_LIST.value:
                     #print('Library has received a message to add player')
-                    client_queue, param, socket, addr, msg = info
+                    client_queue, param, socket, addr, msg, com_time = info
                     status, remain, objMsg = message.ComMessage.msg_decode(msg)
                     if status == 0:
                         msg_type = objMsg.get_message_type()            
@@ -49,12 +50,12 @@ class HubLibrary(object):
                             lib_ID = objMsg.get_info_hash()
                             player_ID = objMsg.get_player_id()
                             player_list, seeder_number, leecher_number = self.get_player_list(lib_ID, player_ID, addr, 50)
-                            
-                            objMsg = message.HubAnswerMsg(b'', b'', 100, 5, seeder_number, leecher_number, player_list)
+                            print('Hub player list ' + str(self.lib[lib_ID]))
+                            objMsg = message.HubAnswerMsg(b'', b'', HUB_INTERVAL_CNX, HUB_MIN_INTERVAL_CNX, seeder_number, leecher_number, player_list)
                             msg = objMsg.msg_encode()
-                            client_queue.put((param,(socket, addr, msg)))
+                            client_queue.put((param,(msg)))
 
-                if qmsg_id.value == LibQMsgEnum.MSGQ_REMOVE_PLAYER_LIST.value:
+                elif qmsg_id.value == LibQMsgEnum.MSGQ_REMOVE_PLAYER_LIST.value:
                     #print('Library has received a message to remove players')    
                     list_to_remove = {}                    
                     for cnx in info:
