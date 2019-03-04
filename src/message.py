@@ -71,115 +71,121 @@ class ComMessage(object):
                  objMsg : Message object depending on the code in the message
         usage : status, remain, objMsg = ComMessage.msg_decode(msg)         
         """
-        status = 0
+        try:    
         
-        if len(msg) < 2:
-            status = -1   
-            return status, msg, None        
-        
-        msg_length = (msg[0]<<8)+msg[1]
-        
-        
-        if len(msg) < (msg_length +2):
-            # the message is not complete, zqit for more bytes
-            status = -1   
-            return status, msg, None
-        elif len(msg) > (0x4000+0x7):
-            # the message is corrupted 
-            status = -2
-            return status, None, None        
-        
-        if msg_length != 0 :
-            remain = msg[4:]
-            if msg[2] == CODE['choke']:
-                return status, remain, ChokeMsg()
-            elif msg[2] == CODE['unchoke']:     
-                return status, remain, UnchokeMsg()
-            elif msg[2] == CODE['interested']:              
-                return status, remain, InterestedMsg()
-            elif msg[2] == CODE['not interested']:  
-                return status, remain, NotInterestedMsg()
-            elif msg[2] == CODE['have']: 
-                if msg_length != 5 :
-                    raise ValueError("Message corrupted")
-                else:
-                    book_index = 0
-                    for i in range(0,4):
-                        book_index = book_index<<8 | msg[3+i]
-                    remain = msg[7:]                    
-                return status, remain, HaveMsg(book_index)
-            elif msg[2] == CODE['bitfield']: 
-                if msg_length < 2 :
-                    raise ValueError("Message corrupted")            
-                else :
-                    nb_bytes = msg_length - 1
-                    remain = msg[3+nb_bytes:]
-                    bitfield = bytearray(nb_bytes)
-                    for i in range(0, nb_bytes):
-                        bitfield[i] = msg[3+i]                         
-                return  status, remain, BitfieldMsg(bitfield)               
-            elif msg[2] == CODE['request']:  
-                if msg_length != 5 :
-                    raise ValueError("Message corrupted")
-                else:
-                    remain = msg[7:]
-                    book_index = 0
-                    for i in range(0,4):
-                        book_index = book_index<<8 | msg[3+i]              
-                return  status, remain, RequestMsg(book_index)  
-            elif msg[2] == CODE['book']:  
-                book_index = 0
-                for i in range(0,4):
-                    book_index = book_index<<8 | msg[3+i]            
-                nb_bytes = msg_length - 5  
-                payload = msg[7:7+nb_bytes]  
-                remain = msg[7+nb_bytes:]                
-                return  status, remain, BookMsg(book_index, payload)  
+            status = 0
+            
+            if len(msg) < 2:
+                status = -1   
+                return status, msg, None        
+            
+            msg_length = (msg[0]<<8)+msg[1]           
+            #print('Message_length' + str(msg_length))
+            
+            if len(msg) < (msg_length +2):
+                # the message is not complete, wait for more bytes
+                status = -1   
+                return status, msg, None
                 
-            elif msg[2] == CODE['handshake']:  
-                if msg_length != 41 :
-                    raise ValueError("Message corrupted")
-                else:
-                    remain = msg[43:]
-                    player_id = msg[3:23]
-                    info_hash = msg[23:43]
-                return  status, remain, HandshakeMsg(player_id, info_hash)    
-                
-            elif msg[2] == CODE['hub notify'] :
-                sub_msg = msg[3:3+msg_length]
-                info = bdecode(sub_msg)
-                remain = msg[2+msg_length:]
-                obj = HubNotifyMsg(info[b'info_hash'], info[b'player_id'], info[b'port'], info[b'downloaded'], info[b'uploaded'], info[b'left'], info[b'event'])
-                return status, remain, obj    
-               
-            elif msg[2] == CODE['hub answer'] :
-                sub_msg = msg[3:3+msg_length]
-                info = bdecode(sub_msg)
-                if b'failure reason' not in info.keys():
-                    info[b'failure reason'] = b''
-                if b'warning message' not in info.keys():   
-                    info[b'warning message'] = b''
-                remain = msg[2+msg_length:]
-                obj = HubAnswerMsg(info[b'failure reason'], info[b'warning message'], info[b'interval'], info[b'min interval'], info[b'complete'], info[b'incomplete'], None)
-                obj.store_players(info[b'players'])
-                return status, remain, obj        
-
-            elif msg[2] == CODE['player invalid address'] :
-                sub_msg = msg[3:3+msg_length]
-                info = bdecode(sub_msg)
-                obj = PlayerInvalidAddrMsg(info)
-                return status, remain, obj     
-            else:
-                print("Unknow type of message. Message corrupted or malicious")
+            if msg_length > (0x4000+0x5):
                 # the message is corrupted 
                 status = -2
-                return status, None, None     
-                
-        else:
-            remain = msg[2:]
-            return status, remain, KeepAliveMsg()           
+                raise ValueError("Message corrupted")
+           
+            if msg_length != 0 :
+                remain = msg[3:]
+                #print('Msg code ' + str(msg[2]))
+                if msg[2] == CODE['choke']:
+                    return status, remain, ChokeMsg()
+                elif msg[2] == CODE['unchoke']:     
+                    return status, remain, UnchokeMsg()
+                elif msg[2] == CODE['interested']:              
+                    return status, remain, InterestedMsg()
+                elif msg[2] == CODE['not interested']:  
+                    return status, remain, NotInterestedMsg()
+                elif msg[2] == CODE['have']: 
+                    if msg_length != 5 :
+                        raise ValueError("Message corrupted")
+                    else:
+                        book_index = 0
+                        for i in range(0,4):
+                            book_index = book_index<<8 | msg[3+i]
+                        remain = msg[7:]                    
+                    return status, remain, HaveMsg(book_index)
+                elif msg[2] == CODE['bitfield']: 
+                    if msg_length < 2 :
+                        raise ValueError("Message corrupted")            
+                    else :
+                        nb_bytes = msg_length - 1
+                        remain = msg[3+nb_bytes:]
+                        bitfield = bytearray(nb_bytes)
+                        for i in range(0, nb_bytes):
+                            bitfield[i] = msg[3+i]                         
+                    return  status, remain, BitfieldMsg(bitfield)               
+                elif msg[2] == CODE['request']:  
+                    if msg_length != 5 :
+                        raise ValueError("Message corrupted")
+                    else:
+                        remain = msg[7:]
+                        book_index = 0
+                        for i in range(0,4):
+                            book_index = book_index<<8 | msg[3+i]              
+                    return  status, remain, RequestMsg(book_index)  
+                elif msg[2] == CODE['book']:  
+                    book_index = 0
+                    for i in range(0,4):
+                        book_index = book_index<<8 | msg[3+i]            
+                    nb_bytes = msg_length - 5  
+                    payload = msg[7:7+nb_bytes]  
+                    remain = msg[7+nb_bytes:]                
+                    return  status, remain, BookMsg(book_index, payload)  
+                    
+                elif msg[2] == CODE['handshake']:  
+                    if msg_length != 41 :
+                        raise ValueError("Message corrupted")
+                    else:
+                        remain = msg[43:]
+                        player_id = msg[3:23]
+                        info_hash = msg[23:43]
+                    return  status, remain, HandshakeMsg(player_id, info_hash)    
+                    
+                elif msg[2] == CODE['hub notify'] :
+                    sub_msg = msg[3:3+msg_length]
+                    info = bdecode(sub_msg)
+                    remain = msg[2+msg_length:]
+                    obj = HubNotifyMsg(info[b'info_hash'], info[b'player_id'], info[b'port'], info[b'downloaded'], info[b'uploaded'], info[b'left'], info[b'event'])
+                    return status, remain, obj    
+                   
+                elif msg[2] == CODE['hub answer'] :
+                    sub_msg = msg[3:3+msg_length]
+                    info = bdecode(sub_msg)
+                    if b'failure reason' not in info.keys():
+                        info[b'failure reason'] = b''
+                    if b'warning message' not in info.keys():   
+                        info[b'warning message'] = b''
+                    remain = msg[2+msg_length:]
+                    obj = HubAnswerMsg(info[b'failure reason'], info[b'warning message'], info[b'interval'], info[b'min interval'], info[b'complete'], info[b'incomplete'], None)
+                    obj.store_players(info[b'players'])
+                    return status, remain, obj        
+
+                elif msg[2] == CODE['player invalid address'] :
+                    sub_msg = msg[3:3+msg_length]
+                    info = bdecode(sub_msg)
+                    remain = msg[2+msg_length:]
+                    obj = PlayerInvalidAddrMsg(info)
+                    return status, remain, obj     
+                else:
+                    print("Unknow type of message. Message corrupted or malicious")
+                    # the message is corrupted 
+                    status = -2
+                    return status, None, None     
+                    
+            else:
+                remain = msg[2:]
+                return status, remain, KeepAliveMsg()           
             
-    
+        except :
+            raise ValueError("Message corrupted")
     
         
         
@@ -228,7 +234,6 @@ class BitfieldMsg(ComMessage):
     def __init__(self, bitfield):
         self.bitfield = bitfield  
         self.bitfield_length = len(self.bitfield)
-        print('Bitfield length '+str(self.bitfield_length))
         super(BitfieldMsg, self).__init__('bitfield')
         self._length = 1 + self.bitfield_length
         
@@ -527,20 +532,22 @@ if __name__ == '__main__':
     # print(status)
     # print(remain)
     # print(objMsg.get_message_type())
-    
-    # msg = ChokeMsg().msg_encode()
-    # print(msg)
-    # status, remain, objMsg = ComMessage.msg_decode(msg)    
-    # print(status)
-    # print(remain)
-    # print(objMsg.get_message_type())
-    
-    # msg = UnchokeMsg().msg_encode()
-    # print(msg) 
-    # status, remain, objMsg = ComMessage.msg_decode(msg) 
-    # print(status)
-    # print(remain)
-    # print(objMsg.get_message_type())
+    print('##########')
+    print('#Choke')   
+    msg = ChokeMsg().msg_encode()
+    print(msg)
+    status, remain, objMsg = ComMessage.msg_decode(msg)    
+    print(status)
+    print(remain)
+    print(objMsg.get_message_type())
+    print('##########')
+    print('#Unchoke')
+    msg = UnchokeMsg().msg_encode()
+    print(msg) 
+    status, remain, objMsg = ComMessage.msg_decode(msg) 
+    print(status)
+    print(remain)
+    print(objMsg.get_message_type())
     
     # msg = InterestedMsg().msg_encode()
     # print(msg)
@@ -563,9 +570,9 @@ if __name__ == '__main__':
     # print(remain)
     # print(objMsg.get_message_type())
     # print(objMsg.get_book_index())    
-    
+    print('##########')
     bitfield = bytearray([0x35, 0x26, 0xEF])
-    
+    print('#Bitfield')
     msg = BitfieldMsg(bitfield).msg_encode()
     print(msg)   
     status, remain, objMsg = ComMessage.msg_decode(msg)
@@ -599,6 +606,11 @@ if __name__ == '__main__':
     # print(objMsg.get_message_type())    
     # print(objMsg.get_player_id())
     # print(objMsg.get_info_hash())    
+    
+    
+  
+
+
     
     
   
