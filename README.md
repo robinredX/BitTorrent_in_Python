@@ -55,7 +55,7 @@ To start a new player (example of content for a batch file):
 ```   
 python.exe player.py root_dir library_file None
 pause
-``` and a queue
+```
 To restart an existing player:
 ``` 
 python.exe player.py root_dir library_file player_id     
@@ -78,9 +78,10 @@ The hub application accepts inbound communication from players. It creates a new
 
 A instance of HubCommunication object manages the exchange with the Hub. It notified the PlayerConnectionManager of new events by sending messages in the PlayerConnectionManager queue.
 
-PlayerConnectionManager oversees inbound and outbound connections. It keeps interacting with the HubCommunicationnter and all other connection objets through its queue which is read in a dedicated thread.
+PlayerConnectionManager oversees inbound and outbound connections. It keeps interacting with the HubCommunication and all other connection objets through its queue which is read in a dedicated thread.  
+
 For inbound connection, other players connect to the player server, which is know by advertising of the Hub.
-For each new connection, an instance of PlayerCommunicationClient is created, dealing with 2 threads and a queue: 1 thread is listening to the input of the socket, the second thread is waiting for message in the queue, thus receiving instructiong from the listening thread or the PlayerConnectionManager for sending messages via the socket.
+For each new connection, an instance of PlayerCommunicationClient is created, dealing with 2 threads and a queue: 1 thread is listening to the input of the socket, the second thread is waiting for message in the queue, thus receiving instructiong from the listening thread or the PlayerConnectionManager for sending messages via the socket. PlayerCommunicationClient can send notification to PlayerConnectionManager using its queue.
 
 For oubound connection, the connection is initiated by PlayerConnectionManager after reception of the list of player from the HubCommunication. For each connected player, an instance of PlayerCommunicationServer is created. It is build on the same model as the 
 PlayerCommunicationClient.
