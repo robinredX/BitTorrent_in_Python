@@ -68,11 +68,11 @@ Note that the listening port number of the player is selected randomly. The avai
 The process allows running multiple players on the same machine even on a local host.
 
 
-## Architecture of the BitTorrent Client
+## Code Architecture of the BitTorrent Client
 
 A brief description of interaction between different parts of the code is given below:
 
-![Architecture](https://github.com/robinredX/ProjectBittorrent/blob/master/code_architecture.jpg)
+![Interaction between different parts of code](https://github.com/robinredX/ProjectBittorrent/blob/master/code_interaction.jpg)
 
 The hub application accepts inbound communication from players. It creates a new instance of HubPlayer for each new connection. This object manages 2 threads that deal with receiving and sending messages via the socket.
 
