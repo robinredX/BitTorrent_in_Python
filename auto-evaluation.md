@@ -17,7 +17,7 @@ In the project repository, the documentation of Auto-evaluation and README are p
 The group members used English for all their commit messages. During git commits, the members provided informative messages about their respective commits. During the development, members pushed and were not fearful in making changes.
 
 * **Code**: (Self-score: 18/20) <br/><br/> 
-Every part of the code in this project is written in English. To format code properly, group members used different tools: Laetitia used Pycharm, Notepad++, Mohamed Nasar used Pycharm and Robin used Spyder. We were careful not to mix tabs and spaces during writing codes. Further, in codes, we believe that we have used very self-explanatory names and followed a good code architecture.
+Every part of the code in this project is written in English. To format code properly, group members used different tools: Pycharm, Microsoft Visual Studio, Notepad++, Spyder. We were careful not to mix tabs and spaces during writing codes. Further, in codes, we believe that we have used very self-explanatory names and followed a good code architecture.
 
 * **Tests**: (Self-score: 18/20) <br/><br/>
 We thoroughly tested our code. We had regular group meetings to discuss and test each other's codes and provided feedbacks. When something didn't work, we tried to find what was the problem and notified the other person. A regular document about testing was manintained during the course of project. We tested messages - both encoding and decoding, and whether the players were communicating as we planned. Issues were rectified in timely and efficient manner. We also communicated messages from our client to client of our meta-group and to test whether or not the messages are accurately received and decoded by their client.
@@ -31,8 +31,9 @@ We thoroughly tested our code. We had regular group meetings to discuss and test
 Laetiatia Couge <br/>
 Robin Khatri <br/>
 Mohamed Nassar
-* **Creation of hub**: Eduardo Brandao
+
+* **Creation of hub**: Eduardo Brandao, Laetitia Couge
 
 ## Time spent
 
-More or less, each member of the project worked between 20-30 hours on this project.
+Each member of the project worked more or less between 20-30 hours on this project.
