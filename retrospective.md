@@ -12,6 +12,6 @@ Possibly one take away from this project is to have a ready code architecture in
 
 For our future work, we'd love to keep our code architecture, and also the lessons we learnt from the project. This is something we are proud of.
 
-# What would we do differently?
+## What would we do differently?
 
-Perhaps group communication is something that could have been improved. Even though it was no way near bad, there is certainly a room for improvement.
+Perhaps group communication is something that could have been improved. Even though it was no way near bad, there is certainly a room for improvement. Also, we may try to implement a more efficient way to manage connections with respect to download/upload speeds.
