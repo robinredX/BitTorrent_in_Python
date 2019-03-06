@@ -72,19 +72,17 @@
 
 3. Once the _player_ receives the dictionary it starts sending a __handshaking__ request to all the other _players_ in the dictionary.  
   The other _players_ answer the handshaking with a __bitfield__ message to notify which _books_ they have.
-
-4. The other _players_ send a __bitfield__ message to other _players_ to notify which _book_ it owns.
-   
-5. The _player_ sends an __interested__ or __not intersted__ message to other _players_. 
+ 
+4. The _player_ sends an __interested__ or __not intersted__ message to other _players_ after it has received the bitfield message. 
    The other _players_ sends an __interested__ or __not interested__ message to the _player_.
   
-6. The _player_ can decide to choke a _player_ at any time by sending a __choking__ message. __Choking__ message means that no data will be sent until __unchoking__ happens. There can be several reasons for __choking__ e.g. the __player__ has reached its maximum upload capacity or the other __player__ does not want any pieces.
+5. When a _player_ connect to the listening port of another player, it must consider it is choked and it is not allowed to send any book request until it receives an __unchoking__ message. The _player_ (on its server side) can decide to choke another _player_ at any time by sending a __choking__ message. __Choking__ message means that no data will be sent until __unchoking__ happens. There can be several reasons for __choking__ e.g. the __player__ has reached its maximum upload capacity or the other __player__ does not want any pieces (it has signified it was not interested).
 
-7. The _player_ sends a __request__ message to a specific number of _players_ who are interested. The __request__ message specifies which _book_ is required.
+6. The _player_ sends a __request__ message to a specific number of _players_ who are interested. The __request__ message specifies which _book_ is required. The _player_ cannot send a request if is has received a __chocking__ message.
 
-8. When a _book_ is completely received, the _player_ matches the SHA1 checksum of the _book_ to the one in the _library_ file. If its integrity is maintained, the _player_ sends a __have__ message to the seeder _player_.
+7. When a _book_ is completely received, the _player_ matches the SHA1 checksum of the _book_ to the one in the _library_ file. If its integrity is maintained, the _player_ sends a __have__ message to all other _players_ connected to the listening port (server side), so that players can update the bitfield they have received.
    
-9. From to time the _player_ can update its status to the _hub_ by sending a __hub notify__ message.
+8. From to time (typically 30s) the _player_ can update its status to the _hub_ by sending a __hub notify__ message.
 
  
 ---
@@ -105,16 +103,16 @@ The messages are bencoded. Bencode can encode 4 different types:
  
 (source Wikipedia: https://en.wikipedia.org/wiki/Bencode)  
 **An integer** is encoded as i`<integer encoded in base ten ASCII`>e. Leading zeros are not allowed (although the number zero is still represented as "0"). Negative values are encoded by prefixing the number with a hyphen-minus. The number 42 would thus be encoded as i42e, 0 as i0e, and -42 as i-42e. Negative zero is not permitted.  
-**A byte string** (a sequence of bytes, not necessarily characters) is encoded as `<length`>:`<contents`>. The length is encoded in base 10, like integers, but must be non-negative (zero is allowed); the contents are just the bytes that make up the string. The string "spam" would be encoded as 4:spam. The specification does not deal with encoding of characters outside the ASCII set.
+**A byte string** (a sequence of bytes, not necessarily characters) is encoded as `<length`>:`<contents`>. The length is encoded in base 10, like integers, but must be non-negative (zero is allowed); the contents are just the bytes that make up the string. The string "spam" would be encoded as 4:spam. The specification does not deal with encoding of characters outside the ASCII set.  
 **A list** of values is encoded as l`<contents`>e . The contents consist of the bencoded elements of the list, in order, concatenated. A list consisting of the string "spam" and the number 42 would be encoded as: l4:spami42ee. Note the absence of separators between elements, and the first character is the letter 'l', not digit '1'.  
 **A dictionary** is encoded as d`<contents`>e. The elements of the dictionary are encoded each key immediately followed by its value. All keys must be byte strings and must appear in lexicographical order. A dictionary that associates the values 42 and "spam" with the keys "foo" and "bar", respectively (in other words, {"bar": "spam", "foo": 42}), would be encoded as follows: d3:bar4:spam3:fooi42ee.  
 
 
 ## 6. Player-player communication
-The following protocol is inspired by the BitTorrent protocol with some modifications (source: https://wiki.theory.org/index.php/BitTorrentSpecification#Tracker_HTTP.2FHTTPS_Protocol)
+The following protocol is inspired by the BitTorrent protocol with some modifications (source: https://wiki.theory.org/index.php/BitTorrentSpecification). The main difference is that the communication with the hub is performed using the TCP protocol via some messages similar to the ones used for the player to player communication.
 
 `<len=0x0001`> : 2 bytes to encode the length of the message (in the case length=1)  
-`<id=0x00`> : 1 by to code the message id
+`<id=0x00`> : 1 by to code the message type (designated as id below)
 #### Message definition
 - **keep alive**:         `<len=0x0000`>  
 - **choke**:              `<len=0x0001`>`<id=0x00`>   
@@ -174,6 +172,7 @@ The following protocol is inspired by the BitTorrent protocol with some modifica
 The player_id is exactly 20 bytes (characters) long.
 The player_id uses the following encoding: '-', two characters for client id, four ascii digits for version number, '-', followed by random numbers.
 e.g. : -RO0101-[12 random bytes]
+The player_id should be consistent with the ip address at the first connection. Any inconsistency should result in the closure of the connection, either on the hub or the player.
 
 ## 9. Library file format
 The content of a metainfo file (the file ending in ".libr") is a bencoded dictionary, containing the keys listed below.
