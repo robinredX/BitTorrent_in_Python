@@ -95,7 +95,13 @@ def main(root_dir, meta_file_path, player_id, role):
     elif role == PLAYER_ROLE_CLIENT_ONLY:
         print('ROLE is CLIENT only')       
     
-    meta_file = utils.Metainfo(meta_file_path)
+    try:
+        meta_file = utils.Metainfo(meta_file_path)
+    except:
+        print('Cannot open library file. Terminate')
+        sys.exit(-1)
+        
+        
     book_list = []
     if player_id is None :
         print('Create player id')
@@ -115,7 +121,10 @@ def main(root_dir, meta_file_path, player_id, role):
         else:
             print('Create new stuff')
             book_list.append(Books(player_dir+'\\'+meta_file.get_file_name(), meta_file))
-            
+    else:
+        print('The root directory does not exist. Terminate')
+        sys.exit(-1)
+    
     #print(book_list[0].get_bitfield())
     
     # get the ip address
@@ -1244,9 +1253,16 @@ class PlayerCommunicationServer(object):
 # logger.debug('This is a low-level debug message.')    
                        
 if __name__== "__main__":
-    root_dir = sys.argv[1]
-    meta_file_path = sys.argv[2]
-    player_id = sys.argv[3] 
+
+    try:
+        root_dir = sys.argv[1]
+        meta_file_path = sys.argv[2]
+        player_id = sys.argv[3] 
+    except:
+        print('usage: player.py root_dir library_file player_id')
+        print('player_id can be None')
+        print()
+        sys.exit(-1)
     try:
         role = int(sys.argv[4])
     except:
