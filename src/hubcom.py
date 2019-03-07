@@ -40,7 +40,7 @@ class HubCommunication(object):
     def __init__(self, meta_file, player_id, listening_port, book, manager_queue):
         self.hub_port = meta_file.get_hub_port() # Get hub's port        
         self.hub_ip = meta_file.get_hub_ip() # Get hub's ip
-        self.hub_ip = socket.gethostbyname(socket.gethostname())
+        #self.hub_ip = socket.gethostbyname(socket.gethostname())
         
         #self.hub_port = 8001
         #self.hub_ip = 'localhost'     
