@@ -36,4 +36,4 @@ Mohamed Nassar
 
 ## Time spent
 
-Each member of the project worked more or less between 20-30 hours on this project.
+Each member of the project worked more or less between 40 hours on this project.
