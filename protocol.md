@@ -47,8 +47,15 @@
 
 6. **Librarifier** 
     * this is an independant program that generates the .libr file to exchange file information
-    
+
+7. **Seeder** 
+A player that shares a book with other players
+
+8. **Leecher** 
+A player that download a book from another player
 ---
+
+
 ## 2. Initialisation
 
 ![INITIALISATION](https://scontent.xx.fbcdn.net/v/t1.15752-9/51642155_323379508283201_1806439536478126080_n.png?_nc_cat=111&_nc_ad=z-m&_nc_cid=0&_nc_ht=scontent.xx&oh=89c096cbde011213742a3323b3e4adc3&oe=5CEF61B5)
@@ -63,6 +70,8 @@
 
 ---
 ## 3. Processing and Requests
+
+The following diagram shows the relationship between a player1 in its role of server and the player2 in its role of client. The symetric situation is also implemented with player 2 as a server and player 1 as a client. The same process is repeated for all players joining the swarm.
 
 ![Image of Bittorrent network processes](https://github.com/robinredX/ProjectBittorrent/blob/master/processing.jpg)
 
@@ -114,7 +123,6 @@ The following protocol is inspired by the BitTorrent protocol with some modifica
 `<len=0x0001`> : 2 bytes to encode the length of the message (in the case length=1)  
 `<id=0x00`> : 1 by to code the message type (designated as id below)
 #### Message definition
-- **keep alive**:         `<len=0x0000`>  
 - **choke**:              `<len=0x0001`>`<id=0x00`>   
 - **unchoke**:            `<len=0x0001`>`<id=0x01`>    
 - **interested**:         `<len=0x0001`>`<id=0x02`>
