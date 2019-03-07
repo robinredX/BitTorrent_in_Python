@@ -19,6 +19,7 @@ Python 3.6+
 1 - Create the library file: 
 ```
 librarifier.py addr path book_size output # e.g. librarifier.py '127.0.0.1/6666' 'C:\\Stuff_file' 0x4000 'file.libr'
+addr format: 'IP/PORT'
 ```
 2 - Create a root directory (root_dir) to store the stuff.
 
