@@ -490,8 +490,8 @@ class PlayerConnectionManager(object):
         # check if the server player is registered
         if kill_player_id in self.server_player_dict.keys():        
             player_ip = self.server_player_dict[kill_player_id]['player_obj'].get_client_player_ip()
-            print('Player IP ' + str(player_ip))
-            print('Kill IP' + str(kill_ip))
+            #print('Player IP ' + str(player_ip))
+            #print('Kill IP' + str(kill_ip))
             if player_id == kill_player_id and player_ip == kill_ip:
                 self.server_player_dict[kill_player_id]['player_obj'].kill_player()                
                 logger.info(self.extra_log, 'Kill player ' + str(kill_player_id) + ' with ip ' + str(kill_ip))  
