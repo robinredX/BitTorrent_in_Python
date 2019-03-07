@@ -220,6 +220,28 @@ class PlayerConnectionManager(object):
 
     def txt_reader(self):
         """ Read text input and distribute it to recipients
+        Allowed Message formats as follows:
+
+        sender              content                 params
+        -------------------------------------------------------
+                             bitfield             None / rand
+
+                              have               int: book_index / rand
+
+                              choke
+
+                             unchoke
+        server
+                              book              int: book_index / rand
+
+        client              handshake
+
+                              request            int: book_index / rand
+
+                            interested
+
+                           not_interested
+
         """
 
         def read_text():
