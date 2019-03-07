@@ -78,8 +78,8 @@ class ComMessage(object):
             if len(msg) < 2:
                 status = -1   
                 return status, msg, None        
-            
-            msg_length = (msg[0]<<8)+msg[1]           
+
+            msg_length = (msg[0]<<8)&0xFF00 | msg[1]
             #print('Message_length' + str(msg_length))
             
             if len(msg) < (msg_length +2):
@@ -152,6 +152,7 @@ class ComMessage(object):
                 elif msg[2] == CODE['hub notify'] :
                     sub_msg = msg[3:3+msg_length]
                     info = bdecode(sub_msg)
+                    #print(info)
                     remain = msg[2+msg_length:]
                     obj = HubNotifyMsg(info[b'info_hash'], info[b'player_id'], info[b'port'], info[b'downloaded'], info[b'uploaded'], info[b'left'], info[b'event'])
                     return status, remain, obj    
@@ -159,6 +160,7 @@ class ComMessage(object):
                 elif msg[2] == CODE['hub answer'] :
                     sub_msg = msg[3:3+msg_length]
                     info = bdecode(sub_msg)
+                    
                     if b'failure reason' not in info.keys():
                         info[b'failure reason'] = b''
                     if b'warning message' not in info.keys():   
@@ -606,11 +608,6 @@ if __name__ == '__main__':
     # print(objMsg.get_message_type())    
     # print(objMsg.get_player_id())
     # print(objMsg.get_info_hash())    
-    
-    
-  
-
-
     
     
   
