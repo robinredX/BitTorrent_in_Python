@@ -22,7 +22,39 @@ class LibQMsgEnum(Enum):
     
 class HubQMsgEnum(Enum):
     MSGQ_SEND_HUB_ANSWER = 0    
+    MSGQ_KILL_CNX_PLAYER = 1
+    
+class PlayerQMsgEnum(Enum):
+    QUEUE_MSG_CONNECT_PLAYERS = 0
+    QUEUE_MSG_ADD_CLIENT = 1
+    QUEUE_MSG_BITFIELD = 2
+    QUEUE_MSG_BITFIELD_REGISTER = 3
+    QUEUE_MSG_REQUEST = 4
+    QUEUE_MSG_BOOK_RECEIVED = 5
+    QUEUE_MSG_PAYLOAD_READ = 6
+    QUEUE_MSG_PAYLOAD_WRITE = 7
+    QUEUE_MSG_REGISTER_HUB_QUEUE = 8
+    QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD = 9
+    QUEUE_MSG_REINIT_HUB_CNX = 10
+    QUEUE_MSG_KILL_CONNECTION = 11    
+    QUEUE_MSG_SEND_BITFIELD = 12
+    QUEUE_MSG_CHOKE_CLIENT = 13
+    QUEUE_MSG_CHOKE_SERVER = 14
+    QUEUE_MSG_UNCHOKE_CLIENT = 15    
+    QUEUE_MSG_UNCHOKE_SERVER = 16
 
+    QUEUE_MSG_SEND_HUB_NOTIFY = 18  
+    QUEUE_MSG_KILL_CNX_PLAYER_SERVER = 19
+    QUEUE_MSG_KILL_CNX_PLAYER_CLIENT = 20
+    QUEUE_MSG_INTERESTED = 21
+    QUEUE_MSG_NOT_INTERESTED = 22
+    QUEUE_MSG_HAVE = 23
+    QUEUE_MSG_CLIENT_UPLOAD = 24
+    QUEUE_MSG_HANDSHAKE_SERVER = 25 
+    QUEUE_MSG_MANAGE_SERVER_CLIENT = 26 
+    
+    
+    
 
 class Metainfo(object):
     def __init__(self, metafile_path):
@@ -116,6 +148,7 @@ def read_socket_buffer(f):
             break
    
     return res    
+
     
     
 if __name__ == '__main__':
