@@ -42,7 +42,6 @@ class Books(object):
         bit_index = book_index % 8
         shift_index = 8 - (bit_index + 1)
         byte_mask = 1 << shift_index
-
         self.bitfield[byte_index] |= byte_mask
 
 
@@ -51,7 +50,6 @@ class Books(object):
         bit_index = book_index % 8
         shift_index = 8 - (bit_index + 1)
         byte_mask = ~(1 << shift_index)
-
         self.bitfield[byte_index] &= byte_mask
 
 
@@ -60,7 +58,6 @@ class Books(object):
         for i in range(self.metafile.get_book_number()):
             if not self.have_book(i, bitfield):
                 missing.append(i)
-
         return missing
 
 
@@ -91,7 +88,6 @@ class Books(object):
         byte_index = book_index // 8
         bit_index = book_index % 8
         shift_index = 8 - (bit_index + 1)
-
         return (bitfield[byte_index] >> shift_index) & 1
 
         
@@ -103,7 +99,7 @@ class Books(object):
         else:
             return None
 
-
+            
     def _read_book(self, book_index):
         try:
             with open(self.full_path, 'rb') as file:
@@ -111,8 +107,22 @@ class Books(object):
                 book_data = file.read(self.metafile.get_book_length())
             return book_data
 
-        except IOError:
-            print('I/O Error in read book %d', book_index)
+        except IOError:            
+            print('I/O Error in read book ', str(book_index))         
+            if not os.path.isfile(self.full_path):
+                print('Recreate the file') 
+                # recreate the file
+                try:
+                    with open(self.full_path, "wb") as file:
+                        file.truncate(self.metafile.get_stuff_size())
+                    bytes_size = int(math.ceil(self.metafile.get_book_number() / 8))    
+                    self.bitfield = bytearray(bytes_size)    
+                except:
+                    # reinitialize the bitfield
+                    bytes_size = int(math.ceil(self.metafile.get_book_number() / 8))
+                    self.bitfield = bytearray(bytes_size) 
+                    print('file recreation fail') 
+                    return None
             return None
 
 
@@ -122,11 +132,30 @@ class Books(object):
                 file.seek(book_index * self.metafile.get_book_length())
                 file.write(data)
                 self.add_index(book_index)
-            return True
+            return 0
 
         except IOError:
-            print('I/O Error in write book %d', book_index)
-            return False
+            print('I/O Error in write book ', str(book_index))
+            if not os.path.isfile(self.full_path):
+                print('Recreate the file')                 
+                # recreate the file
+                try:
+                    with open(self.full_path, "wb") as file:
+                        file.truncate(self.metafile.get_stuff_size()) 
+                    bytes_size = int(math.ceil(self.metafile.get_book_number() / 8))                        
+                    self.bitfield = bytearray(bytes_size)    
+                    with open(self.full_path, 'r+b') as file:
+                        file.seek(book_index * self.metafile.get_book_length())
+                        file.write(data)
+                        self.add_index(book_index)
+                    return 1
+                except:
+                    bytes_size = int(math.ceil(self.metafile.get_book_number() / 8))   
+                    self.bitfield = bytearray(bytes_size) 
+                    print('file recreation fail') 
+                    return -1 
+                    
+            return -1
 
 
     def queue_read(self, book_index, reply):
@@ -146,8 +175,8 @@ class Books(object):
                     reply_queue.put((reply_param, (index, self._read_book(index))))
                 if op == 'w':
                     data_length = len(third_param)
-                    self._write_book(index, third_param)
-                    reply_queue.put((reply_param, (index, data_length)))
+                    result = self._write_book(index, third_param)
+                    reply_queue.put((reply_param, (index, data_length, result)))
                     print('write done')
 
         t = Thread(target=queue_consumer)
