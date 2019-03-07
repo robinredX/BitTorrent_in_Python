@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Feb 21 11:21:01 2019
-"""
-
 from threading import Thread
 from threading import Timer
 import socket
@@ -19,6 +15,7 @@ from books import Books
 from hashlib import sha1
 from enum import Enum
 import logging
+from utils import PlayerQMsgEnum
 
 
 FORMAT='%(asctime)s - %(levelname)s - %(message)s'
@@ -28,52 +25,12 @@ logger.setLevel(logging.INFO)
 
 
 STATE_INIT = 0
-STATE_UPDATE = 1
-STATE_INTERESTED = 2
-STATE_REQUEST = 3
-STATE_CONFIRM_WRITE = 4
-STATE_HUB_RECONNECT = 5
-STATE_HUB_DISCONNECTED = 6
-STATE_CHOKE = 7
-STATE_NOT_INTERESTED = 8
-STATE_SEND_HUB_NOTIFY = 9
-STATE_WAIT_QUEUE = 10
-STATE_PLAYER_KILLED = 11
+STATE_HUB_RECONNECT = 2
+STATE_HUB_DISCONNECTED = 3
+STATE_SEND_HUB_NOTIFY = 4
+STATE_WAIT_QUEUE = 5
 
 
-
-class PlayerQMsgEnum(Enum):
-    QUEUE_MSG_CONNECT_PLAYERS = 0
-    QUEUE_MSG_ADD_CLIENT = 1
-    QUEUE_MSG_BITFIELD = 2
-    QUEUE_MSG_BITFIELD_REGISTER = 3
-    QUEUE_MSG_REQUEST = 4
-    QUEUE_MSG_BOOK_RECEIVED = 5
-    QUEUE_MSG_PAYLOAD_READ = 6
-    QUEUE_MSG_PAYLOAD_WRITE = 7
-    QUEUE_MSG_REGISTER_HUB_QUEUE = 8
-    QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD = 9
-    QUEUE_MSG_REINIT_HUB_CNX = 10
-    QUEUE_MSG_KILL_CONNECTION = 11    
-    QUEUE_MSG_CHOKE = 12
-    QUEUE_MSG_CHOKE_CLIENT = 13
-    QUEUE_MSG_CHOKE_SERVER = 14
-    QUEUE_MSG_UNCHOKE_CLIENT = 15    
-    QUEUE_MSG_UNCHOKE_SERVER = 16
-
-    QUEUE_MSG_SEND_HUB_NOTIFY = 18  
-    QUEUE_MSG_KILL_CNX_PLAYER_SERVER = 19
-    QUEUE_MSG_KILL_CNX_PLAYER_CLIENT = 20
-    QUEUE_MSG_INTERESTED_SEND = 21
-    QUEUE_MSG_NOT_INTERESTED_SEND = 22
-    QUEUE_MSG_HAVE = 23
-  
-    QUEUE_MSG_HANDSHAKE_SERVER = 25 
-    QUEUE_MSG_MANAGE_SERVER_CLIENT = 26
-    
-   
-    
- 
          
 class HubCommunication(object): 
     """
@@ -81,11 +38,12 @@ class HubCommunication(object):
     Establish a connection with the hub and obtain list of players
     """
     def __init__(self, meta_file, player_id, listening_port, book, manager_queue):
-        self.hub_port = meta_file.get_hub_port() # Get hub's port
+        self.hub_port = meta_file.get_hub_port() # Get hub's port        
         self.hub_ip = meta_file.get_hub_ip() # Get hub's ip
+        self.hub_ip = socket.gethostbyname(socket.gethostname())
         
-        self.hub_port = 8001
-        self.hub_ip = 'localhost'     
+        #self.hub_port = 8001
+        #self.hub_ip = 'localhost'     
         
         self.info_hash = meta_file.get_info_hash() # Info hash from the metafile
         self.meta_file = meta_file
@@ -115,7 +73,7 @@ class HubCommunication(object):
 
         left = self.meta_file.get_stuff_size() - self.book.get_downloaded_stuff_size()
         if left == 0:
-            logger.debug('!!!!!!!!!The file has been completely downloaded')        
+            logger.info(self.extra_log, '!!!!The file has been completely downloaded')        
         
         
     def get_hub_queue(self):
@@ -141,18 +99,19 @@ class HubCommunication(object):
                 try:
                     msg = utils.read_socket_buffer(self.hub_socket)
                 except:
-                    logger.debug('Hub is disconnected')
+                    logger.debug(self.extra_log, 'Hub is disconnected')
                     #self.hub_q.put((QUEUE_MSG_REINIT_HUB_CNX, STATE_HUB_RECONNECT))
                     Timer(20, self.send_delayed_reconnect_hub_notify_queue_msg).start()
                     self.hub_cnx_status = 'NOT_CONNECTED'
                     break
+                    
                 if msg != b'':
                     #print(msg)
                     full_msg = remain + msg
                     status, remain, objMsg = message.ComMessage.msg_decode(full_msg)  
                     
                     if status == 0:
-                        logger.debug('Player ' + str(self.player_id) + ' receive answer from hub')        
+                        logger.debug(self.extra_log, 'Player ' + str(self.player_id) + ' receive answer from hub')        
                         
                         # Hub has sent a new list of players
                         if objMsg.get_message_type() == 'hub answer':
@@ -174,17 +133,17 @@ class HubCommunication(object):
                                 self.manager_q.put((PlayerQMsgEnum.QUEUE_MSG_CONNECT_PLAYERS,list_players))
                                 logger.debug(self.extra_log, 'Send manager a player list ' + str(list_players))
                             else:
-                                logger.debug('Player ' + str(self.player_id) + ' no player to connect to')
+                                logger.debug(self.extra_log, 'Player ' + str(self.player_id) + ' no player to connect to')
                                 
                     elif status == -2 :
-                        print('The message is corrupted')
+                        logger.error(self.extra_log, 'The message is corrupted')
                         #self.hub_q.put((QUEUE_MSG_REINIT_HUB_CNX, STATE_HUB_RECONNECT))
                         Timer(20, self.send_delayed_reconnect_hub_notify_queue_msg).start()
                         self.hub_socket.close()
                         self.hub_cnx_status = 'NOT_CONNECTED'
                         break 
                         
-            print('Exit listening thread player ' + str(self.player_id))   
+            logger.warning(self.extra_log, 'Exit listening thread player ' + str(self.player_id))   
                         
         t = Thread(target=client)
         return t  
@@ -196,9 +155,8 @@ class HubCommunication(object):
                 if state == STATE_SEND_HUB_NOTIFY:
                     file_size = self.meta_file.get_stuff_size()
                     book_size = self.meta_file.get_book_length()
-                    left = self.meta_file.get_stuff_size() - self.book.get_downloaded_stuff_size()
-                   
-                    logger.debug('Left to download ' + str(left))
+                    left = self.meta_file.get_stuff_size() - self.book.get_downloaded_stuff_size()                   
+                    logger.debug(self.extra_log, 'Left to download ' + str(left))
                     
                     msg = message.HubNotifyMsg(
                                 self.meta_file.get_info_hash(),
@@ -215,9 +173,9 @@ class HubCommunication(object):
                         if self.hub_interval is not None:   
                             Timer(self.hub_interval, self.send_delayed_hub_notify_queue_msg).start()
                     except:
-                        logger.debug('The hub is disconnected')
-                        Timer(20, self.send_delayed_reconnect_hub_notify_queue_msg).start()
-                        #self.hub_q.put((PlayerQMsgEnum.QUEUE_MSG_REINIT_HUB_CNX, STATE_HUB_RECONNECT))                       
+                        logger.debug(self.extra_log,'The hub is disconnected')
+                        Timer(20, self.send_delayed_reconnect_hub_notify_queue_msg).start()   
+                        
                     state = STATE_WAIT_QUEUE    
                     
                 elif state == STATE_HUB_RECONNECT:
@@ -235,16 +193,15 @@ class HubCommunication(object):
                                 self.t2.start()
                             state = STATE_SEND_HUB_NOTIFY                        
                     except:
-                        print('Cannot connect to hub')                        
+                        logger.warning(self.extra_log, 'Cannot connect to hub')                        
                     
                 elif state == STATE_WAIT_QUEUE:                
                     try:
-                        qmsg_id, info = self.hub_q.get(True, self.hub_interval)
-                     
+                        qmsg_id, info = self.hub_q.get(True, self.hub_interval)                     
                         # a list of dead players is received
                         if qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_NOTIFY_HUB_PLAYER_DEAD.value:
                             list_players = []
-                            print('Dead player ' + str(info))
+                            logger.info(self.extra_log, 'Dead player ' + str(info))
                             for player in info:
                                list_players.append(player['ip']+b'/'+str(player['port']).encode())
                             if len(list_players):
@@ -253,13 +210,13 @@ class HubCommunication(object):
                                     self.hub_socket.sendall(msg)
                                     self.hub_last_x_time = time.time()
                                 except:    
-                                    print('The hub is disconnected')
+                                    logger.warning(self.extra_log, 'The hub is disconnected')
                                     state = STATE_HUB_RECONNECT                                    
                                     #resend info in the queue to deal with after hub reconnection
                                     self.hub_q.put((qmsg_id, info))
                                     
                         elif qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_REINIT_HUB_CNX.value:
-                            logger.debug('HubCom receive a queue message to reconnect to hub')
+                            logger.debug(self.extra_log,'HubCom receive a queue message to reconnect to hub')
                             state = info                                     
                     
                         elif qmsg_id.value == PlayerQMsgEnum.QUEUE_MSG_SEND_HUB_NOTIFY.value:
@@ -270,7 +227,7 @@ class HubCommunication(object):
                         #print('Hub no msg in queue')    
                         pass     
                         
-            print('Exit sending thread player ' + str(self.player_id))   
+            logger.warning(self.extra_log, 'Exit sending thread player ' + str(self.player_id))   
             
         t = Thread(target=client)
         return t   
