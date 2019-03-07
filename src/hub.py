@@ -4,9 +4,11 @@ from hubplayer import HubPlayer
 from hublibrary import HubLibrary 
 
 def main():
-    this_IP = 'localhost'
+   
     at_this_port = 8001
-    hub_address = (this_IP, at_this_port)
+    this_IP = socket.gethostbyname(socket.gethostname())
+    print(this_IP)
+    #this_IP = 'localhost'  
     
     hub_library = HubLibrary()
     lib_queue = hub_library.get_library_queue()
