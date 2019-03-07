@@ -8,7 +8,7 @@ import binascii
 import socket
 import queue
 import os
-from netutils import read_line
+# from netutils import read_line
 import numpy as np
 from enum import Enum
 
