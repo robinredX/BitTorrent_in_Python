@@ -18,9 +18,11 @@ Python 3.6+
 ### Setup :  
 1 - Create the library file: 
 ```
-librarifier.py addr path book_size output # e.g. librarifier.py '127.0.0.1/6666' 'C:\\Stuff_file' 0x4000 'file.libr'
+librarifier.py addr path book_size output # e.g. librarifier.py '127.0.0.1/8001' 'C:\\Stuff_file' 0x4000 'file.libr'
 addr format: 'IP/PORT'
 ```
+The addr is the IP and listening port of the hub. The listening port of the hub is 8001
+
 2 - Create a root directory (root_dir) to store the stuff file.
 
 3 - Prepare the environnement for the 1st player that owns the complete stuff. For this, we run player.py.
